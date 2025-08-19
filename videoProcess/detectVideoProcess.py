@@ -82,7 +82,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     
     url = detectCCTV.rtsp
     cctvIndex = detectCCTV.index
-    imgsz = 1280
+    imgsz = 640
     miniWidth = json.loads(os.environ["MINI_SIZE"])[0]
     miniHeight = json.loads(os.environ["MINI_SIZE"])[1]
     mediumWidth = json.loads(os.environ["MEDIUM_SIZE"])[0]
@@ -99,6 +99,10 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     
     
     
+    # 연속 실패 카운트(프레임 변환/유효성 실패)
+    fail_count = 0
+    fail_threshold = 10  # 연속 10프레임 실패 시 재연결
+
     fps = 15
     maxDuration = 20  
     saveBufferSize = int(maxDuration * fps)
@@ -120,28 +124,53 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
              'c:v': 'h264',
              'hwaccel': 'cuda'
              }
+
+    src_type = "rtsp"
+    prev_time = None
     
     while url is not None:
         try:
-            # URL 형식에 따라 AV open 분기
-            if url.lower().startswith("rtsp://"):
-                # RTSP 스트림
-                container: InputContainer = open(
-                    url,
-                    'r',
-                    format='rtsp',
-                    options=options,
-                    buffer_size=102400 * 12,
-                    timeout=10
-                )
-            else:
-                # 로컬 파일 또는 HTTP 비디오
-                container: InputContainer = open(url, 'r')  # format 지정 안 함
+            # URL 형식에 따라 AV open 분기 + 예외처리
+            try:
+                if url.lower().startswith("rtsp://"):
+                    # RTSP 스트림
+                    container: InputContainer = open(
+                        url,
+                        'r',
+                        format='rtsp',
+                        options=options,
+                        buffer_size=102400 * 12,
+                        timeout=10
+                    )
+                    src_type = "rtsp"
+                else:
+                    # 로컬 파일 또는 HTTP 비디오
+                    container: InputContainer = open(url, 'r')  # format 지정 안 함
+                    src_type = "video"
+            except Exception as e:
+                print(f"{cctvIndex}번 영상 open 실패: {e}", flush=True)
+                time.sleep(3)   # 잠깐 대기 후 재시도
+                continue
 
             # 비디오 스트림 찾기
             videoStream = next(s for s in container.streams if s.type == 'video')
             videoStream.thread_type = 'AUTO'
             height, width = 1080, 1920
+
+            # 파일일 때만 FPS 추출
+            frame_interval = None
+            if src_type == "video":
+                try:
+                    if videoStream.average_rate:
+                        video_fps = float(videoStream.average_rate)
+                    elif videoStream.guessed_rate:
+                        video_fps = float(videoStream.guessed_rate)
+                    else:
+                        video_fps = None
+                    if video_fps and video_fps > 0:
+                        frame_interval = 1.0 / video_fps
+                except Exception:
+                    frame_interval = None
             
             # 첫 프레임 해상도 확인
             for packet in container.demux(videoStream):
@@ -155,134 +184,185 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                     break
                 
             # REGION INIT
-            roiPolygons = [Polygon(mapFromTo(item, width, height) for item in roiCoord) if len(roiCoord) >= 3 else None  for roiCoord in roiCoords]
-            roePolygons = [Polygon(mapFromTo(item, width, height) for item in roeCoord) if len(roeCoord) >= 3 else None  for roeCoord in roeCoords]
+            #roiPolygons = [Polygon(mapFromTo(item, width, height) for item in roiCoord) if len(roiCoord) >= 3 else None  for roiCoord in roiCoords]
+            #roePolygons = [Polygon(mapFromTo(item, width, height) for item in roeCoord) if len(roeCoord) >= 3 else None  for roeCoord in roeCoords]
+            #if not isRunDetect or isRunDetect is None:
+            #    roiPolygons = [None]
+
+            # REGION INIT  ★ None 제거 버전
+            roiPolygons = [
+                Polygon(mapFromTo(item, width, height) for item in roiCoord)
+                for roiCoord in (roiCoords or []) if roiCoord and len(roiCoord) >= 3
+            ]
+            roePolygons = [
+                Polygon(mapFromTo(item, width, height) for item in roeCoord)
+                for roeCoord in (roeCoords or []) if roeCoord and len(roeCoord) >= 3
+            ]
             if not isRunDetect or isRunDetect is None:
-                roiPolygons = [None]
+                roiPolygons = []  # 감지 비활성 시 ROI 비움
+
                     
             # FLAG INIT
             cnt = 0
             xyxys = []
             saveVideoRequests:dict[int, str] = {}
             saveVideoFrameCnt = 0
+            prev_time = None
             
             ### VIDEO PROCESS ###
             for packet in container.demux(videoStream) :
                 for frame in packet.decode(): 
+                    t0 = time.time()  # 프레임 처리 시작 시각
+
                     cnt += 1
                     frame:VideoFrame
-                    image = frame.to_ndarray(format='bgr24')
-                    # UPDATE BY API SIGNAL
+
+                    try:
+                        image = frame.to_ndarray(format='bgr24')
+                        # UPDATE BY API SIGNAL
+
+                        # === 프레임 정상 여부 확인 추가 ===
+                        if image is None or image.size == 0:
+                            fail_count += 1
+                            if fail_count >= fail_threshold:
+                                raise RuntimeError(f"{fail_threshold}프레임 연속 실패(빈 프레임)")
+                            continue
+
+                        h, w, c = image.shape
+                        if h == 0 or w == 0:
+                            print(f"{cctvIndex}번 CCTV: 잘못된 프레임 사이즈 {h}x{w}", flush=True)
+                            fail_count += 1
+                            if fail_count >= fail_threshold:
+                                raise RuntimeError(f"{fail_threshold}프레임 연속 실패(사이즈 0)")
+                            continue
+                        
+                        # ===== 정상 프레임이므로 카운트 리셋 =====
+                        fail_count = 0
+
+                        '''
+                        newRegion = updateRegions(sharedDetectData.eventRegionQueue)
+                        if newRegion is not None:
+                            if newRegion[0] == 'roi':
+                                roiCoords = newRegion[1]
+                                roiPolygons = [Polygon(mapFromTo(item, width, height) for item in roiCoord) if len(roiCoord) >= 3 else None  for roiCoord in roiCoords]
+                            else:
+                                roeCoords = newRegion[1]
+                                roePolygons = [Polygon(mapFromTo(item, width, height) for item in roeCoord) if len(roeCoord) >= 3 else None  for roeCoord in roeCoords]
+                        '''
+
+                        # REGION UPDATE (★ None 제거 버전 유지)
+                        newRegion = updateRegions(sharedDetectData.eventRegionQueue)
+                        if newRegion is not None:
+                            if newRegion[0] == 'roi':
+                                roiCoords = newRegion[1]
+                                roiPolygons = [
+                                    Polygon(mapFromTo(item, width, height) for item in roiCoord)
+                                    for roiCoord in (roiCoords or []) if roiCoord and len(roiCoord) >= 3
+                                ]
+                            else:
+                                roeCoords = newRegion[1]
+                                roePolygons = [
+                                    Polygon(mapFromTo(item, width, height) for item in roeCoord)
+                                    for roeCoord in (roeCoords or []) if roeCoord and len(roeCoord) >= 3
+                                ]
                     
-                    newRegion = updateRegions(sharedDetectData.eventRegionQueue)
-                    if newRegion is not None:
-                        if newRegion[0] == 'roi':
-                            roiCoords = newRegion[1]
-                            roiPolygons = [Polygon(mapFromTo(item, width, height) for item in roiCoord) if len(roiCoord) >= 3 else None  for roiCoord in roiCoords]
-                        else:
-                            roeCoords = newRegion[1]
-                            roePolygons = [Polygon(mapFromTo(item, width, height) for item in roeCoord) if len(roeCoord) >= 3 else None  for roeCoord in roeCoords]
+                        # DRAW REGION
+                        newDetectionSensitivity = getJsonQueue(sharedDetectData.sensitivityQueue)
+                        if newDetectionSensitivity is not None:
+                            detectCCTV.detectionSensitivity = newDetectionSensitivity
                             
-                    newPhoneList = updateSmsDestination(sharedDetectData.smsDestinationQueue)
-                    #if newPhoneList is not None:
-                        #detectEventManager.updateSmsPhoneList(newPhoneList)
-                
-                    newDetectionSensitivity = getJsonQueue(sharedDetectData.sensitivityQueue)
-                    if newDetectionSensitivity is not None:
-                        detectCCTV.detectionSensitivity = newDetectionSensitivity
+                        newConfigSetting = getJsonQueue(sharedDetectData.settingQueue)
+                        if newConfigSetting is not None:
+                            configSetting.getData(newConfigSetting) 
+                            detectEventManager.updateContinuousThreshold(configSetting.continuousThreshold)
                         
-                    newConfigSetting = getJsonQueue(sharedDetectData.settingQueue)
-                    if newConfigSetting is not None:
-                        configSetting.getData(newConfigSetting) 
-                        detectEventManager.updateContinuousThreshold(configSetting.continuousThreshold)
-                    
-                    # YOLO DETECT
-                    if cnt > configSetting.detectionPeriod:
-                        cnt = 0
-                        xyxys = []
-                        results = model.predict(image, verbose=False, conf=detectCCTV.detectionSensitivity, iou=0.7, imgsz=imgsz, half=True, device='0', classes=0)
-                        eventObjectCoords = []
-                        for result in results:
-                            for xyxy in result.boxes.xyxy:
-                                x = int((xyxy[0]+xyxy[2])/2)
-                                y = int(xyxy[1] ) if int(xyxy[1]>xyxy[3]) else int(xyxy[3])
-                                objectHeight = abs(int(xyxy[1]) - int(xyxy[3]))
-                                pos = Point(x,y)            
-                                if (not any(pos.within(roePolygon) for roePolygon in roePolygons)) & (objectHeight < maxObjectHeight):
-                                    if any(pos.within(roiPolygon) for roiPolygon in roiPolygons) :  
-                                        color = (0, 0, 255)
-                                        eventObjectCoords.append([x, y])
-                                    else :
-                                        color = (0, 255, 0)
-                                    xyxys.append([xyxy, color]) 
-                    
-                        detectEventManager.getEvent(eventObjectCoords)
-                        if detectEventManager.savingEventLogFlag:
-                            detectEventManager.savingEventLogFlag = False
-                            outputVideo, ptzOutputVideo = detectEventManager.setEventLog(eventObjectCoords, image)
-                            #saveVideo.saveEventQueue.put(ptzOutputVideo)
-                            #saveVideoRequests[outputVideo] = saveVideoFrameCnt
-                    
-                    # IMAGE PROCESS
-                    for xyxy, color in xyxys:
-                        plotBox(xyxy, image, color)
+                        # YOLO DETECT
+                        if cnt > configSetting.detectionPeriod:
+                            cnt = 0
+                            xyxys = []
+                            results = model.predict(image, verbose=False, conf=detectCCTV.detectionSensitivity, iou=0.7, imgsz=imgsz, half=True, device='0', classes=0)
+                            eventObjectCoords = []
+                            for result in results:
+                                for xyxy in result.boxes.xyxy:
+                                    x1, y1, x2, y2 = map(int, xyxy)
+                                    x = (x1 + x2) // 2
+                                    y = max(y1, y2)
+                                    objectHeight = abs(y2 - y1)
+                                    pos = Point(x, y)
+                                    #x = int((xyxy[0]+xyxy[2])/2)
+                                    #y = int(xyxy[1] ) if int(xyxy[1]>xyxy[3]) else int(xyxy[3])
+                                    #objectHeight = abs(int(xyxy[1]) - int(xyxy[3]))
+                                    #pos = Point(x,y)            
+                                    #if (not any(pos.within(roePolygon) for roePolygon in roePolygons)) & (objectHeight < maxObjectHeight):
+                                    #    if any(pos.within(roiPolygon) for roiPolygon in roiPolygons) :  
+                                    #        color = (0, 0, 255)
+                                    #        eventObjectCoords.append([x, y])
+                                    #    else :
+                                    #        color = (0, 255, 0)
+                                    #    xyxys.append([xyxy, color]) 
+
+                                    in_roe = any(pos.within(p) for p in roePolygons) if roePolygons else False
+                                    in_roi = any(pos.within(p) for p in roiPolygons) if roiPolygons else False
+
+                                    if (not in_roe) and (objectHeight < maxObjectHeight):
+                                        if in_roi:
+                                            color = (0, 0, 255)
+                                            eventObjectCoords.append([x, y])
+                                        else:
+                                            color = (0, 255, 0)
+                                        xyxys.append([(x1, y1, x2, y2), color])
+
                         
-                    #print("[DBG] image W,H:", image.shape[1], image.shape[0])
-                    #print("[DBG] ROI count:", len(roiPolygons), "ROE count:", len(roePolygons))
-                    #if roiPolygons: print("[DBG] ROI0 bounds:", roiPolygons[0].bounds)
-                    #if roePolygons: print("[DBG] ROE0 bounds:", roePolygons[0].bounds)
+                            detectEventManager.getEvent(eventObjectCoords)
+                            if detectEventManager.savingEventLogFlag:
+                                detectEventManager.savingEventLogFlag = False
+                                outputVideo, ptzOutputVideo = detectEventManager.setEventLog(eventObjectCoords, image)
+
                         
-                    #draw_roe_roi_outlines(image, roePolygons, roiPolygons, thickness=3)
-                        
-                    # BUFFER TO SAVE
-                    #saveFrame = VideoFrame.from_ndarray(image.copy(), format='bgr24')
-                    #frameBuffer.append(saveFrame)
-                    #if len(frameBuffer) > saveBufferSize:   
-                    #    frameBuffer.popleft()
-                    
-                    # SAVE BUFFER PROCESS
-                    #if saveVideoRequests:
-                    #    saveVideoRequest = 0
-                    #else:
-                    #    saveVideoFrameCnt += 1
-                    #    KeyToDelete = []
-                    #    for outputVideo_,  saveVideoRequest in saveVideoRequests.items():
-                    #        if saveVideoFrameCnt >= saveVideoRequest + saveBufferSize - (fps * 5):
-                    #            saveVideo.saveVideo(frameBuffer, fps, outputVideo_)
-                    #            KeyToDelete.append(outputVideo_)
-                    #    for item in KeyToDelete:
-                    #        del saveVideoRequests[item]
+                        # IMAGE PROCESS
+                        for xyxy, color in xyxys:
+                            plotBox(xyxy, image, color)
                             
-                    #    with contextlib.suppress(Exception):
-                    #        wrongDetectionDir = saveVideo.wrongDetectionQueue.get_nowait()
-                    #        del saveVideoRequests[wrongDetectionDir]
-                        
-                    # IMAGE RESIZING
-                    #miniSizeImage = resizeImage(image, miniWidth, miniHeight)
-                    #mediumSizeImage = resizeImage(image, mediumWidth, mediumHeight)
-                    
-                    #mini_future = executor.submit(encode_webp_pillow, miniSizeImage, thirtySplitQuality)
-                    #medium_future = executor.submit(encode_webp_pillow, mediumSizeImage, fourthSplitQuality)
-                    full_future = executor.submit(encode_webp_pillow, image, fullFrameQuality)
+    
+                        # ENCODE & SHARE
+                        full_future = executor.submit(encode_webp_pillow, image, fullFrameQuality)
+                        buffer = full_future.result()
 
-                    # 결과를 기다림
-                    #miniSizeBuffer = mini_future.result()
-                    #mediumSizeBuffer = medium_future.result()
-                    buffer = full_future.result()
+                        if len(buffer) > len(sharedDetectData.sharedFullFrame):
+                            buffer = buffer[:len(sharedDetectData.sharedFullFrame)]
 
-                    # 인코딩된 데이터를 shared memory에 저장
-                    #if len(miniSizeBuffer) > len(sharedDetectData.sharedMiniFrame):
-                    #    miniSizeBuffer = miniSizeBuffer[:len(sharedDetectData.sharedMiniFrame)]
-                    #if len(mediumSizeBuffer) > len(sharedDetectData.sharedMediumFrame):
-                    #    mediumSizeBuffer = mediumSizeBuffer[:len(sharedDetectData.sharedMediumFrame)]
-                    if len(buffer) > len(sharedDetectData.sharedFullFrame):
-                        buffer = buffer[:len(sharedDetectData.sharedFullFrame)]
+                        sharedDetectData.sharedFullFrame[:len(buffer)] = buffer.tobytes()
 
-                    # UPDATE SHARED FRAME VARIABLES
-                    #sharedDetectData.sharedMiniFrame[:len(miniSizeBuffer)] = miniSizeBuffer.tobytes()
-                    #sharedDetectData.sharedMediumFrame[:len(mediumSizeBuffer)] = mediumSizeBuffer.tobytes()
-                    sharedDetectData.sharedFullFrame[:len(buffer)] = buffer.tobytes()
-                    
+                    except Exception as e:
+                        # 변환/유효성 실패 → 카운트 증가 후 임계치 검사
+                        print(f"{cctvIndex}번 CCTV: 프레임 변환 실패 → {e}", flush=True)
+                        fail_count += 1
+                        if fail_count >= fail_threshold:
+                            # 상위 try/except에서 container.close() 및 재연결 처리
+                            raise
+                        continue
+
+                    # === 슬립 (단순화 버전) ===
+                    t1 = time.time()
+                    proc_dt = t1 - t0
+
+                    if src_type == "video":
+                        if frame_interval:
+                            # 목표 간격 - 처리시간 만큼만 쉼 (1배속)
+                            sleep_s = frame_interval - proc_dt
+                            if sleep_s > 0:
+                                time.sleep(sleep_s)
+                    else:  # RTSP
+                        now = t1
+                        if prev_time is not None:
+                            dt = now - prev_time  # 이전 프레임부터 현재 프레임까지 실제 간격
+                            # 이미 dt만큼 시간이 지나 있음 → 처리시간을 빼고 남은 만큼만 살짝 쉼
+                            # (RTSP는 원래 실시간이므로 과도한 슬립은 피하고 상한을 둠)
+                            remain = dt - proc_dt
+                            if remain > 0:
+                                time.sleep(min(remain, 0.05))
+                        prev_time = now
+                                
                     
         except Exception as e :
             try:
