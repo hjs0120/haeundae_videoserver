@@ -3,6 +3,7 @@ import shutil
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, BackgroundTasks
+import contextlib
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketState
 from fastapi.responses import HTMLResponse, FileResponse
@@ -21,6 +22,9 @@ from videoProcess.saveVideo import SaveVideo
 from store.configStore import ServerConfig
 
 import time
+
+import logging
+logger = logging.getLogger(__name__)
 
 class DetectVideoServer():
     def __init__(self, port, backendHost, selectedConfig:ServerConfig, sharedDetectDataList:list[SharedDetectData], saveVideoList: list[SaveVideo]):
@@ -68,7 +72,8 @@ class DetectVideoServer():
                 async with aiofiles.open(fp, 'rb') as f:
                     return await f.seek(0, os.SEEK_END)
             except Exception as e:
-                print(f"Error reading file {fp}: {e}")
+                #print(f"Error reading file {fp}: {e}")
+                logger.error(f"Error reading file {fp}: {e}")
                 return 0
             
         @self.app.get("/checkStorage")
@@ -86,7 +91,8 @@ class DetectVideoServer():
             sizes = await asyncio.gather(*arr) 
             totalSize = sum(sizes)
             sizeMb = totalSize / (1024 * 1024)
-            print(sizeMb)
+            #print(sizeMb)
+            logger.debug(sizeMb)
             return sizeMb
             
         @self.app.get("/download/")
@@ -134,7 +140,8 @@ class DetectVideoServer():
             index = int(index)
             roi = requests.get(f"http://{backendHost}/forVideoServer/getRoi?port={port}&index={index}")
             roi = json.loads(roi.text)[0]
-            print('roi', roi, flush=True)
+            #print('roi', roi, flush=True)
+            logger.debug('roi', roi)
             sharedDetectDataList[index].eventRegionQueue.put(['roi'])
             for polygon in roi:
                 for coord in polygon:
@@ -148,7 +155,8 @@ class DetectVideoServer():
             index = int(index)
             roe = requests.get(f"http://{backendHost}/forVideoServer/getRoe?port={port}&index={index}")
             roe = json.loads(roe.text)[0]
-            print('roe', roe, flush=True)
+            #print('roe', roe, flush=True)
+            logger.debug('roe', roe)
             sharedDetectDataList[index].eventRegionQueue.put(['roe'])
             for polygon in roe:
                 for coord in polygon:
@@ -166,9 +174,11 @@ class DetectVideoServer():
                 eventRegionQueue.put([])
                 eventRegionQueue.put(['endSign'])
                 eventRegionQueue. put(None)
-                print(f"{port}/{index}: stopDetect 성공")
+                #print(f"{port}/{index}: stopDetect 성공")
+                logger.info(f"{port}/{index}: stopDetect 성공")
             except Exception as e:
-                print(f"stopDetect 오류: {e}")
+                #print(f"stopDetect 오류: {e}")
+                logger.error(f"stopDetect 오류: {e}")
                   
         @self.app.get("/runDetect/{index}")
         async def runDetect(index):
@@ -183,12 +193,22 @@ class DetectVideoServer():
                         eventRegionQueue.put([coord['x'], coord['y']])
                     eventRegionQueue.put(['endSign'])
                 eventRegionQueue.put(None)
-                print(f"{port}/{index}: runDetect 성공")
+                #print(f"{port}/{index}: runDetect 성공")
+                logger.info(f"{port}/{index}: runDetect 성공")
                 
             except Exception as e:
-                print(f"runDetect 오류: {e}")
+                #print(f"runDetect 오류: {e}")
+                logger.error(f"runDetect 오류: {e}")
             
         streamClient = [[] for index in range(selectedConfig.wsIndex)]
+
+        def _safe_remove_client(lst, ws):
+            """웹소켓 리스트에서 ws를 안전하게 제거"""
+            try:
+                if ws in lst:
+                    lst.remove(ws)
+            except Exception:
+                pass
         
         async def _send_full_once(websocket, sharedDetectDataList, index: int):
             sd = sharedDetectDataList[index]
@@ -226,7 +246,8 @@ class DetectVideoServer():
             index = int(index)
             await websocket.accept()
             streamClient[index].append(websocket)
-            print(f'{port}/{index}: accept, clients={len(streamClient[index])}')
+            #print(f'{port}/{index}: accept, clients={len(streamClient[index])}')
+            logger.info(f'{port}/{index}: accept, clients={len(streamClient[index])}')
 
             # 0) 기본 FPS로 즉시 시작 (환경변수 DEFAULT_STREAM_FPS 허용; 없으면 10)
             
@@ -243,129 +264,119 @@ class DetectVideoServer():
             paused  = False
 
             # 1) 전송/수신 단일 루프
-            while websocket.client_state == WebSocketState.CONNECTED:
-                try:
-                    if paused:
-                        # ⏸ 일시정지 상태: 전송 스케줄링 없음, 다음 명령만 대기
-                        try:
-                            cmd = await websocket.receive_text()  # timeout 없음
-                        except WebSocketDisconnect:
-                            break
 
-                        t = (cmd or "").strip().lower()
-                        if t == "stop":
-                            await websocket.close()
-                            if websocket in streamClient[index]:
-                                streamClient[index].remove(websocket)
-                            print(f'{port}/{index}: stop by client')
-                            break
+            try:
+                while websocket.client_state == WebSocketState.CONNECTED:
+                    try:
+                        if paused:
+                            # ⏸ 일시정지 상태: 전송 스케줄링 없음, 다음 명령만 대기
+                            try:
+                                cmd = await websocket.receive_text()  # timeout 없음
+                            except WebSocketDisconnect:
+                                break
 
-                        # 숫자면 FPS 변경 / 재개
-                        try:
-                            new_fps = float(t)
-                            if new_fps <= 0.0:
-                                # 이미 paused이므로 그대로 유지 (ACK만 반환)
-                                await websocket.send_text("fps=0 (paused)")
-                                continue
-                            # 재개
-                            fps = min(60.0, max(1.0, new_fps))
-                            interval = 1.0 / fps
-                            paused = False
-                            await websocket.send_text(f"fps={int(fps)}")
-                            # 즉시 새 FPS 반영: 다음 전송을 바로 하도록 last_sent 조정
-                            last_sent = time.monotonic() - interval
-                            print(f'{port}/{index}: resume, fps -> {fps}')
-                            continue
-                        except ValueError:
-                            # 기타 텍스트 명령 무시
-                            continue
-
-                    else:
-                        # ▶ 송신 중 상태: 타임아웃 동안만 명령 대기, 만료되면 프레임 전송
-                        now = time.monotonic()
-                        remaining = max(0.0, (last_sent + interval) - now)
-
-                        try:
-                            cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
-                        except asyncio.TimeoutError:
-                            cmd = None
-
-                        if cmd is not None:
                             t = (cmd or "").strip().lower()
                             if t == "stop":
                                 await websocket.close()
                                 if websocket in streamClient[index]:
                                     streamClient[index].remove(websocket)
-                                print(f'{port}/{index}: stop by client')
+                                #print(f'{port}/{index}: stop by client')
+                                logger.info(f'{port}/{index}: stop by client')
                                 break
-                            else:
-                                # 숫자면 FPS 변경 또는 일시정지
-                                try:
-                                    new_fps = float(t)
-                                    if new_fps <= 0.0:
-                                        paused = True
-                                        await websocket.send_text("fps=0 (paused)")
-                                        print(f'{port}/{index}: paused')
-                                        # 일시정지 들어가면 다음 루프에서 paused 블록으로
-                                        continue
-                                    new_fps = min(60.0, max(1.0, new_fps))
-                                    if abs(new_fps - fps) > 1e-6:
-                                        fps = new_fps
-                                        interval = 1.0 / fps
-                                        await websocket.send_text(f"fps={int(fps)}")
-                                        print(f'{port}/{index}: fps -> {fps}')
-                                        # 즉시 반영: 다음 전송 타이밍을 당겨서 곧바로 전송 가능
-                                        last_sent = time.monotonic() - interval
-                                except ValueError:
-                                    pass
-                            continue  # 명령 처리 끝, 다음 루프로
 
-                        # 여기까지 왔으면 remaining 만료 → 전송 시점
-                        try:
-                            await _send_full_once(websocket, sharedDetectDataList, index)
-                            last_sent = time.monotonic()
-                        except WebSocketDisconnect:
-                            break
-                        except Exception as e:
-                            # 필요 시 로깅/에러 카운팅 후 재시도/연결정책
-                            print(f'{port}/{index}: send error: {e}')
-                            # 에러 정책에 따라 continue/break
-                            continue
+                            # 숫자면 FPS 변경 / 재개
+                            try:
+                                new_fps = float(t)
+                                if new_fps <= 0.0:
+                                    # 이미 paused이므로 그대로 유지 (ACK만 반환)
+                                    await websocket.send_text("fps=0 (paused)")
+                                    continue
+                                # 재개
+                                fps = min(60.0, max(1.0, new_fps))
+                                interval = 1.0 / fps
+                                paused = False
+                                await websocket.send_text(f"fps={int(fps)}")
+                                # 즉시 새 FPS 반영: 다음 전송을 바로 하도록 last_sent 조정
+                                last_sent = time.monotonic() - interval
+                                #print(f'{port}/{index}: resume, fps -> {fps}')
+                                logger.info(f'{port}/{index}: resume, fps -> {fps}')
+                                continue
+                            except ValueError:
+                                # 기타 텍스트 명령 무시
+                                continue
 
-                except WebSocketDisconnect:
-                    try: await websocket.close()
-                    finally:
-                        if websocket in streamClient[index]: streamClient[index].remove(websocket)
-                    print(f'{port}/{index}: close, clients={len(streamClient[index])}')
-                except Exception as e:
-                    try: await websocket.close()
-                    finally:
-                        if websocket in streamClient[index]: streamClient[index].remove(websocket)
-                    print(f'{port}/{index}: stream err -> {e!r}, clients={len(streamClient[index])}')
-        
-        alarmClient = [[] for index in range(selectedConfig.wsIndex)]
-        @self.app.websocket("/ws/alarm/{index}")
-        async def websocketIsDetect(websocket: WebSocket, index):
-            index = int(index)
-            await websocket.accept()
-            alarmClient[index].append(websocket)
-            print(f'{port}/{index}: alarm accept, Current Client: {len(streamClient[index])}', flush=True)
-            while websocket.client_state == WebSocketState.CONNECTED:
+                        else:
+                            # ▶ 송신 중 상태: 타임아웃 동안만 명령 대기, 만료되면 프레임 전송
+                            now = time.monotonic()
+                            remaining = max(0.0, (last_sent + interval) - now)
+
+                            try:
+                                cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+                            except asyncio.TimeoutError:
+                                cmd = None
+
+                            if cmd is not None:
+                                t = (cmd or "").strip().lower()
+                                if t == "stop":
+                                    await websocket.close()
+                                    if websocket in streamClient[index]:
+                                        streamClient[index].remove(websocket)
+                                    #print(f'{port}/{index}: stop by client')
+                                    logger.info(f'{port}/{index}: stop by client')
+                                    break
+                                else:
+                                    # 숫자면 FPS 변경 또는 일시정지
+                                    try:
+                                        new_fps = float(t)
+                                        if new_fps <= 0.0:
+                                            paused = True
+                                            await websocket.send_text("fps=0 (paused)")
+                                            #print(f'{port}/{index}: paused')
+                                            logger.info(f'{port}/{index}: paused')
+                                            # 일시정지 들어가면 다음 루프에서 paused 블록으로
+                                            continue
+                                        new_fps = min(60.0, max(1.0, new_fps))
+                                        if abs(new_fps - fps) > 1e-6:
+                                            fps = new_fps
+                                            interval = 1.0 / fps
+                                            await websocket.send_text(f"fps={int(fps)}")
+                                            #print(f'{port}/{index}: fps -> {fps}')
+                                            logger.info(f'{port}/{index}: fps -> {fps}')
+                                            # 즉시 반영: 다음 전송 타이밍을 당겨서 곧바로 전송 가능
+                                            last_sent = time.monotonic() - interval
+                                    except ValueError:
+                                        pass
+                                continue  # 명령 처리 끝, 다음 루프로
+
+                            # 여기까지 왔으면 remaining 만료 → 전송 시점
+                            try:
+                                await _send_full_once(websocket, sharedDetectDataList, index)
+                                last_sent = time.monotonic()
+                            except WebSocketDisconnect:
+                                break
+                            except Exception as e:
+                                # 필요 시 로깅/에러 카운팅 후 재시도/연결정책
+                                #print(f'{port}/{index}: send error: {e}')
+                                logger.error(f'{port}/{index}: send error: {e}')
+                                # 에러 정책에 따라 continue/break
+                                continue
+
+                    except WebSocketDisconnect:
+                        # 연결 종료 → 루프 종료 (정리는 finally에서 일괄 수행)
+                        break
+                    except Exception as e:
+                        logger.error(f'{port}/{index}: stream err -> {e!r}, clients={len(streamClient[index])}')
+                        break
+            finally:
+                # 모든 종료 경로에서 정리 보장
                 try:
-                    await websocket.receive()
-                    await websocket.send_bytes(sharedDetectDataList[index].sharedDetectFlag.value)
-                    await asyncio.sleep(1/5)
-                    
-                except WebSocketDisconnect:
                     await websocket.close()
+                except Exception:
+                    pass
+                if websocket in streamClient[index]:
                     streamClient[index].remove(websocket)
-                    print(f'{port}/{index}: alarm close, Current Client: {len(streamClient[index])}', flush=True)
-                    break
-                
-                except Exception as e:
-                    print(f'err : {e}')
-                    await websocket.close()
-                    break
+                logger.info(f'{port}/{index}: close, clients={len(streamClient[index])}')
+
         
     def run(self):
         config = Config()
@@ -373,7 +384,8 @@ class DetectVideoServer():
         try:
             asyncio.run(serve(self.app, config))
         except Exception as e:
-            print(f'{self.serverPort}serve 에러 : {e}')
+            #print(f'{self.serverPort}serve 에러 : {e}')
+            logger.error(f'{self.serverPort}serve 에러 : {e}')
         
 def split_path_filename(s):
     match = re.match(r'(.+)/(.+)', s)

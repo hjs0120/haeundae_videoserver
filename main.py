@@ -1,4 +1,4 @@
-from torch.multiprocessing import Process
+from torch.multiprocessing import Process, Queue
 import os 
 from store.broadcastStore import BroadcastStore
 from store.cctvStore import DetectCCTVStore, PtzCCTVStore, DetectCCTV, PtzCCTV
@@ -7,24 +7,53 @@ from store.groupConfigStore import GroupStore
 from store.configSettingStore import ConfigSettingStore
 from store.smsStore import SmsDestinationStore, SmsConfigStore
 
-from videoProcess.sharedData import SharedDetectData, SharedPtzData
+from mqtt_client import publisher_loop
+
+#from videoProcess.sharedData import SharedDetectData, SharedPtzData
+from videoProcess.sharedData import SharedDetectData
 from videoProcess.detectVideoProcess import detectedVideo
-from videoProcess.videoProcess import video
+#from videoProcess.videoProcess import video
 from videoProcess.saveVideo import SaveVideo
 
 from module.broadcast import Broadcast
 from api.detectServer import DetectVideoServer
-from api.ptzServer import PtzVideoServer
+#from api.ptzServer import PtzVideoServer
 from module.ptz import Ptz
 import requests
 import websockets
 import asyncio
 import gc
 import time
+
+import logging
+import logging.config
+import json
+
+from config import CONFIG
+
 # from config import BACKEND_HOST
 
 #from dotenv import load_dotenv
 #load_dotenv()
+
+def setup_logging(
+    default_path="logger.json",
+    default_level=logging.INFO,
+    env_key="LOG_CFG"
+):
+    """logger.json 설정을 불러와 logging 초기화"""
+    path = default_path
+    value = os.getenv(env_key, None)
+    if value:
+        path = value
+
+    if os.path.exists(path):
+        with open(path, "rt", encoding="utf-8") as f:
+            config = json.load(f)
+        logging.config.dictConfig(config)
+    else:
+        logging.basicConfig(level=default_level)
+
 
 class VideoServer():
     def __init__(self, BACKEND_HOST = "192.168.0.31:7000"):
@@ -40,6 +69,9 @@ class VideoServer():
         self.configSettingStore = ConfigSettingStore(self.BACKEND_HOST)
         
         self.getDataLoad()
+
+        self.mqtt_queue: Queue | None = None
+        self.mqtt_proc: Process | None = None
         
     def getDataLoad(self):
         self.broadcastStore.getData()
@@ -61,26 +93,30 @@ class VideoServer():
         self.configSetting = self.configSettingStore.configSettings
         
     def selectServerConfig(self) -> ServerConfig:
-        print("서버 설정을 선택해 주세요")
+        #print("서버 설정을 선택해 주세요")
+        logger.info("서버 설정을 선택해 주세요")
         for serverConfig in self.config:
             index = serverConfig.index
             detectPortList = serverConfig.detectPortList
             #ptzPortList = serverConfig.ptzPortList
             wsIndex = serverConfig.wsIndex
             #print(f"{index}번 서버 : \n - 지능형 영상 포트 : {detectPortList} \n - PTZ 영상 포트 : {ptzPortList} \n - 포트별 영상 갯수 : {wsIndex}")
-            print(f"{index}번 서버 : \n - 지능형 영상 포트 : {detectPortList} \n - 포트별 영상 갯수 : {wsIndex}")
+            #print(f"{index}번 서버 : \n - 지능형 영상 포트 : {detectPortList} \n - 포트별 영상 갯수 : {wsIndex}")
+            logger.info(f"{index}번 서버 : \n - 지능형 영상 포트 : {detectPortList} \n - 포트별 영상 갯수 : {wsIndex}")
             
 
-            userInput = os.getenv('SERVER_INDEX')
+            userInput = CONFIG["SERVER_INDEX"]
             try:
                 inputServerIndex = int(userInput) - 1
             except :
-                print("잘못된 입력 입니다, 다시입력해 주세요")
+                #print("잘못된 입력 입니다, 다시입력해 주세요")
+                logger.error("잘못된 입력 입니다, 다시입력해 주세요")
                 continue
             if inputServerIndex in range(len(self.config)):
                 return self.config[inputServerIndex]
             else: 
-                print("존재하지 않는 서버 인덱스 입니다, 다시입력해 주세요")
+                #print("존재하지 않는 서버 인덱스 입니다, 다시입력해 주세요")
+                logger.error("존재하지 않는 서버 인덱스 입니다, 다시입력해 주세요")
                 
     #def matchingApiAndProcess(self) -> dict[ServerConfig, dict[str, dict[int, list[DetectCCTV | PtzCCTV]]]]:
     def matchingApiAndProcess(self) -> dict[ServerConfig, dict[str, dict[int, list[DetectCCTV]]]]:
@@ -121,11 +157,14 @@ class VideoServer():
                         try:
                             response = requests.get(f"http://{self.BACKEND_HOST}/forVideoServer/setDetectWsIndex?cctvIndex={detectCCTV.index}&ip={wsUrl['ip']}&port={wsUrl['port']}&index={wsUrl['index']}")
                             if response.status_code == 200 :
-                                print("setDetectWsIndex Success")
+                                #print(f"setDetectWsIndex Success, cctvIndex : {detectCCTV.index}", flush=True)
+                                logger.info(f"setDetectWsIndex Success, cctvIndex : {detectCCTV.index}")
                             else :
-                                print("setDetectWsIndex Fail")
+                                #print("setDetectWsIndex Fail")
+                                logger.error("setDetectWsIndex Fail")
                         except Exception as e :
-                            print("setDetectWsIndex Fail : ", e)
+                            #print("setDetectWsIndex Fail : ", e)
+                            logger.error(f"setDetectWsIndex Fail : {e}")
                         
                     
             #elif cctvType == "ptz":
@@ -183,6 +222,11 @@ class VideoServer():
         #self.ptzVideoServers:list[PtzVideoServer] = []
         #self.ptzVideoProcess:list[Process] = []
         #self.ptzAutoControlProcs: list[Process] = []
+
+        if self.mqtt_queue is None:
+            self.mqtt_queue = Queue(maxsize=1000)
+        if self.mqtt_proc is None:
+            self.mqtt_proc = Process(target=publisher_loop, args=(self.mqtt_queue,), daemon=True)
         
         for typeFlag, MatchedServerData in selectedMatchedServer.items():
             if typeFlag == 'detect':
@@ -232,7 +276,7 @@ class VideoServer():
                         self.detectVideoProcess.append(Process(target=detectedVideo, 
                                                         args=(detectCCTV, sharedDetectData, isRunDetect, targetBroadcast, selectedConfig, self.BACKEND_HOST, 
                                                               smsPhoneList, self.smsConfig[0] if len(self.smsConfig) > 0 else None, saveVideo, linkedPtzCCTV,
-                                                              selectedSetting), 
+                                                              selectedSetting,self.mqtt_queue), 
                                                         daemon=True))
                         
                     self.detectVideoServers.append(DetectVideoServer(port, self.BACKEND_HOST, selectedConfig, sharedDetectDataList, saveVideoList))
@@ -284,12 +328,16 @@ class VideoServer():
     
     def runProcess(self):
         try:
+            # MQTT 퍼블리셔 먼저 시작 (단 1개)
+            if self.mqtt_proc is not None and not self.mqtt_proc.is_alive():
+                self.mqtt_proc.start()
             #for proc in self.serverProcs + self.ptzVideoProcess + self.detectVideoProcess + self.ptzAutoControlProcs:
             for proc in self.serverProcs + self.detectVideoProcess :
                 proc.start()
             asyncio.run(self.sendMessage(f"ws://{self.BACKEND_HOST}", 'reload'))
         except Exception as e:
-            print("runProcess error:", e)
+            #print("runProcess error:", e)
+            logger.error(f"runProcess error: {e}")
 
     def killProcess(self):
         try:
@@ -301,12 +349,33 @@ class VideoServer():
         except:
             pass
         gc.collect()
-        
+        # === MQTT 퍼블리셔 종료 ===
+        try:
+            if self.mqtt_queue is not None:
+                self.mqtt_queue.put_nowait(None)  # sentinel
+        except Exception:
+            pass
+        try:
+            if self.mqtt_proc is not None and self.mqtt_proc.is_alive():
+                self.mqtt_proc.join(timeout=3)
+        except Exception:
+            pass
+
+
     async def sendMessage(self, uri, message):
         async with websockets.connect(uri) as websocket:
             await websocket.send(message)
-            print(f"Message sent: {message}")
+            #print(f"Message sent: {message}")
+            logger.info(f"Message sent: {message}")
         
 if __name__ == "__main__":
-    videoserver = VideoServer(os.environ["BACKEND_HOST"])
+
+    setup_logging()   # logger.json 적용
+    logger = logging.getLogger(__name__)
+
+    logger.info("서비스 시작")
+    logger.debug("디버그 모드 활성화")
+    logger.error("에러 발생 예시")
+
+    videoserver = VideoServer(CONFIG["BACKEND_HOST"])
     videoserver.main()

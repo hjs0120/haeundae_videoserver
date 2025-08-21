@@ -1,0 +1,423 @@
+2025-08-20 02:37:38 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 02:40:21 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 02:41:58 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:15 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:42 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:43 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:43 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:44:43 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+Traceback (most recent call last):
+  File "/app/api/detectServer.py", line 303, in websocketStream
+    cmd = await asyncio.wait_for(websocket.receive_text(), timeout=remaining)
+  File "/usr/lib/python3.10/asyncio/tasks.py", line 445, in wait_for
+    return fut.result()
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 119, in receive_text
+    self._raise_on_disconnect(message)
+  File "/usr/local/lib/python3.10/dist-packages/starlette/websockets.py", line 113, in _raise_on_disconnect
+    raise WebSocketDisconnect(message["code"], message.get("reason"))
+starlette.websockets.WebSocketDisconnect: (1006, None)
+2025-08-20 02:52:01 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 02:52:13 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 02:53:55 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 02:54:57 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 12:33:14 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 12:49:07 [ERROR] libav.NULL:218 - Invalid NAL unit size (-1780862011 > 4906).
+2025-08-20 12:49:08 [ERROR] libav.h264:0 - error while decoding MB 74 38, bytestream -5
+2025-08-20 12:49:08 [ERROR] libav.NULL:218 - missing picture in access unit with size 4910
+2025-08-20 12:49:08 [ERROR] libav.h264:0 - Invalid NAL unit size (-1780862011 > 4906).
+2025-08-20 12:49:11 [ERROR] libav.h264:0 - Error splitting the input into NAL units.
+2025-08-20 12:49:14 [ERROR] libav.NULL:218 - Invalid NAL unit size (-640453055 > 150).
+2025-08-20 12:49:14 [ERROR] libav.NULL:218 - missing picture in access unit with size 154
+2025-08-20 12:49:15 [ERROR] libav.h264:0 - Invalid NAL unit size (-640453055 > 150).
+2025-08-20 12:49:18 [ERROR] libav.h264:0 - Error splitting the input into NAL units.
+2025-08-20 12:49:26 [ERROR] libav.NULL:218 - Invalid NAL unit size (2139868496 > 6661).
+2025-08-20 12:49:27 [ERROR] libav.NULL:218 - missing picture in access unit with size 6665
+2025-08-20 12:49:28 [ERROR] libav.h264:0 - Invalid NAL unit size (2139868496 > 6661).
+2025-08-20 12:49:33 [ERROR] libav.h264:0 - Error splitting the input into NAL units.
+2025-08-20 12:49:50 [ERROR] libav.NULL:218 - Invalid NAL unit size (315001201 > 170).
+2025-08-20 12:49:51 [ERROR] libav.NULL:218 - missing picture in access unit with size 174
+2025-08-20 12:49:53 [ERROR] libav.h264:0 - Invalid NAL unit size (315001201 > 170).
+2025-08-20 12:49:57 [ERROR] libav.h264:0 - Error splitting the input into NAL units.
+2025-08-20 12:50:10 [ERROR] libav.NULL:218 - Invalid NAL unit size (-1615771754 > 6851).
+2025-08-20 12:50:12 [ERROR] libav.NULL:218 - missing picture in access unit with size 6855
+2025-08-20 12:50:15 [ERROR] libav.h264:0 - Invalid NAL unit size (-1615771754 > 6851).
+2025-08-20 12:50:20 [ERROR] libav.h264:0 - Error splitting the input into NAL units.
+2025-08-20 12:53:17 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 12:57:35 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 12:58:28 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 13:02:21 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 13:02:34 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:05:14 [ERROR] __main__:351 - 에러 발생 예시
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:09:30 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 04:12:37 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:19:50 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:21:48 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:22:47 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:24:00 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:24:00 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:24:00 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:24:00 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:26:04 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:40:26 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 04:43:36 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:54:51 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:56:07 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:56:08 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:56:08 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:56:08 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:56:08 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:57:10 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 04:59:38 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 04:59:39 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 04:59:39 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:01:45 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:06:13 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:14:18 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:18:18 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 05:21:44 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:31:27 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:41:09 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5010/1: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5010/0: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5010/2: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5010/3: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5020/0: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5010/4: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5020/1: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5020/2: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5020/4: close, clients=0
+2025-08-20 05:42:07 [ERROR] api.detectServer:358 - 5020/3: close, clients=0
+2025-08-20 05:46:10 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 05:54:44 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 06:14:35 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 06:27:57 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-20 07:06:22 [ERROR] __main__:353 - 에러 발생 예시
+2025-08-21 12:58:24 [ERROR] __main__:363 - 에러 발생 예시
+2025-08-21 12:59:13 [ERROR] __main__:363 - 에러 발생 예시
+2025-08-21 12:59:39 [ERROR] __main__:364 - 에러 발생 예시
+2025-08-21 13:43:03 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 13:43:50 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 13:46:15 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 13:51:06 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 15:26:19 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 15:40:31 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 16:06:11 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 16:06:42 [ERROR] __main__:378 - 에러 발생 예시
+2025-08-21 16:07:36 [ERROR] __main__:378 - 에러 발생 예시
