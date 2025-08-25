@@ -178,10 +178,36 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     fullFrameQuality = CONFIG["fullFrameQuality"]
     maxObjectHeight = CONFIG["maxObjectHeight"]
 
-    rois = detectCCTV.roi
-    roiCoords = [[[item['x'], item['y']] for item in roi] for roi in rois]
-    roes = detectCCTV.roe
-    roeCoords = [[[item['x'], item['y']] for item in roe] for roe in roes]
+    #rois = detectCCTV.roi
+    #roiCoords = [[[item['x'], item['y']] for item in roi] for roi in rois]
+    #roes = detectCCTV.roe
+    #roeCoords = [[[item['x'], item['y']] for item in roe] for roe in roes]
+
+    # === 초기 RUN/STOP 상태 반영 ===
+    s = sharedDetectData
+    # 분석은 항상 수행, 전송/액션만 제어됨
+    s.runDetectFlag.value = bool(isRunDetect)
+
+    # === ROI/ROE 초기 로드(FHD 기준 좌표) → 공유변수 기본 세팅 ===
+    base_roi = tuple(
+        tuple((int(item['x']), int(item['y'])) for item in roi)
+        for roi in (detectCCTV.roi or [])
+        if isinstance(roi, list) and len(roi) >= 3
+    )
+    base_roe = tuple(
+        tuple((int(item['x']), int(item['y'])) for item in roe)
+        for roe in (detectCCTV.roe or [])
+        if isinstance(roe, list) and len(roe) >= 3
+    )
+    if sharedDetectData.roi_coords is None or sharedDetectData.roe_coords is None:
+        with sharedDetectData.region_lock:
+            if sharedDetectData.roi_coords is None:
+                sharedDetectData.roi_coords = base_roi
+            if sharedDetectData.roe_coords is None:
+                sharedDetectData.roe_coords = base_roe
+            # 최초 세팅은 버전 증가 없이도 OK (원하면 +=1)
+
+
     
     # 연속 실패 카운트(프레임 변환/유효성 실패)
     fail_count = 0
@@ -296,17 +322,14 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 if getFrameFlag:
                     break
 
-            # REGION INIT  ★ None 제거 버전
-            roiPolygons = [
-                Polygon(mapFromTo(item, width, height) for item in roiCoord)
-                for roiCoord in (roiCoords or []) if roiCoord and len(roiCoord) >= 3
-            ]
-            roePolygons = [
-                Polygon(mapFromTo(item, width, height) for item in roeCoord)
-                for roeCoord in (roeCoords or []) if roeCoord and len(roeCoord) >= 3
-            ]
-            if not isRunDetect or isRunDetect is None:
-                roiPolygons = []  # 감지 비활성 시 ROI 비움
+            # === REGION INIT (FHD 고정: 스케일링 없음) ===
+            with sharedDetectData.region_lock:
+                _roi_coords = sharedDetectData.roi_coords or tuple()
+                _roe_coords = sharedDetectData.roe_coords or tuple()
+                local_region_ver = sharedDetectData.region_ver.value
+
+            roiPolygons = [Polygon(poly) for poly in _roi_coords]
+            roePolygons = [Polygon(poly) for poly in _roe_coords]
 
                     
             # FLAG INIT
@@ -382,22 +405,22 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                         # ===== 정상 프레임이므로 카운트 리셋 =====
                         fail_count = 0
 
-                        # REGION UPDATE (★ None 제거 버전 유지)
-                        newRegion = updateRegions(sharedDetectData.eventRegionQueue)
-                        if newRegion is not None:
-                            if newRegion[0] == 'roi':
-                                roiCoords = newRegion[1]
-                                roiPolygons = [
-                                    Polygon(mapFromTo(item, width, height) for item in roiCoord)
-                                    for roiCoord in (roiCoords or []) if roiCoord and len(roiCoord) >= 3
-                                ]
-                            else:
-                                roeCoords = newRegion[1]
-                                roePolygons = [
-                                    Polygon(mapFromTo(item, width, height) for item in roeCoord)
-                                    for roeCoord in (roeCoords or []) if roeCoord and len(roeCoord) >= 3
-                                ]
-                    
+                        # === REGION UPDATE (버전 비교 → 변경시에만 재생성) ===
+                        shared_ver = sharedDetectData.region_ver.value
+                        if shared_ver != local_region_ver:
+                            with sharedDetectData.region_lock:
+                                _roi_coords = sharedDetectData.roi_coords or tuple()
+                                _roe_coords = sharedDetectData.roe_coords or tuple()
+                                local_region_ver = sharedDetectData.region_ver.value
+                            roiPolygons = [Polygon(poly) for poly in _roi_coords]
+                            roePolygons = [Polygon(poly) for poly in _roe_coords]
+                            logger.info(
+                                f"{cctvIndex}: ROI/ROE 업데이트 반영 "
+                                f"(roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})"
+                            )
+
+
+
                         # DRAW REGION
                         newDetectionSensitivity = getJsonQueue(sharedDetectData.sensitivityQueue)
                         if newDetectionSensitivity is not None:
@@ -468,6 +491,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                     logger.info(f"{cctvIndex}: ROI intrusion detected (3 consecutive frames)")
 
                                     # 스냅샷 저장
+                                    snap_ok = False
                                     try:
                                         if image is None or image.size == 0:
                                             raise ValueError("empty frame")
@@ -485,22 +509,23 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                        
                                     # === MQTT: 중앙 퍼블리셔 큐에 전송 ===
                                     try:
-                                        #topic_base = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
-                                        #topic = f"{topic_base}/roi/{cctvIndex}"
-                                        topic = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
-                                        payload = {
-                                            "cctvIndex": int(detectCCTV.index),
-                                            "objectCoord": [[int(c[0]), int(c[1])] for c in eventObjectCoords],
-                                            "savedImageDir": (
-                                                f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputImg}'
-                                                if snap_ok else None
-                                            ),
-                                            "savedVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputVideo}',
-                                            "dateTime": ts,
-                                            #"savedPtzVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{self.ptzOutputVideo}',
-                                        }
-                                        if mqtt_queue is not None:
-                                            mqtt_queue.put_nowait({"topic": topic, "payload": payload, "qos": 0, "retain": False})
+                                        if sharedDetectData.runDetectFlag.value:
+                                            #topic_base = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
+                                            #topic = f"{topic_base}/roi/{cctvIndex}"
+                                            topic = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
+                                            payload = {
+                                                "cctvIndex": int(detectCCTV.index),
+                                                "objectCoord": [[int(c[0]), int(c[1])] for c in eventObjectCoords],
+                                                "savedImageDir": (
+                                                    f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputImg}'
+                                                    if snap_ok else None
+                                                ),
+                                                "savedVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputVideo}',
+                                                "dateTime": ts,
+                                                #"savedPtzVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{self.ptzOutputVideo}',
+                                            }
+                                            if mqtt_queue is not None:
+                                                mqtt_queue.put_nowait({"topic": topic, "payload": payload, "qos": 0, "retain": False})
                                     except Exception as _mqe:
                                         logger.warning(f"MQTT queue push failed: {_mqe}")
 

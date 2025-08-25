@@ -14,10 +14,11 @@ from hypercorn.asyncio import serve
 import requests
 import aiofiles
 from zipfile import ZipFile
-import re
+#import refCORSMiddleware
 import json
 import asyncio
-from videoProcess.detectVideoProcess import SharedDetectData
+#from videoProcess.detectVideoProcess import SharedDetectData
+from videoProcess.sharedData import SharedDetectData
 from videoProcess.saveVideo import SaveVideo
 from store.configStore import ServerConfig
 
@@ -135,6 +136,7 @@ class DetectVideoServer():
             sharedDetectDataList[index].smsDestinationQueue.put(None)
             return {"message": "roi 적용 성공"}
     
+        '''
         @self.app.get("/updateRoi/{index}")
         async def updateRoi(index):
             index = int(index)
@@ -164,18 +166,83 @@ class DetectVideoServer():
                 sharedDetectDataList[index].eventRegionQueue.put(['endSign'])
             sharedDetectDataList[index].eventRegionQueue.put(None)
             return {"message": "roe 적용 성공"}
-                
+        '''
+
+        @self.app.get("/updateRoi/{index}")
+        async def updateRoi(index):
+            try:
+                index = int(index)
+                s = sharedDetectDataList[index]
+                # 1) 백엔드에서 ROI 좌표 조회
+                resp = requests.get(
+                    f"http://{backendHost}/forVideoServer/getRoi",
+                    params={"port": port, "index": index},
+                    timeout=5
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                # data 예: [ [ {"x":..,"y":..}, ... ], [..], ... ]
+                raw = data[0] if isinstance(data, list) and data else []
+                # 2) 정규화(정수 튜플 + 최소 3점)
+                polys = []
+                for poly in raw:
+                    pts = []
+                    for p in poly:
+                        if "x" in p and "y" in p:
+                            pts.append((int(p["x"]), int(p["y"])))
+                    if len(pts) >= 3:
+                        polys.append(tuple(pts))
+                # 3) 공유변수 교체 + 버전 증가
+                with s.region_lock:
+                    s.roi_coords = tuple(polys)       # 불변 구조 통째 교체
+                    s.region_ver.value += 1           # 변경 통지
+                logger.info(f"{port}/{index}: updateRoi 적용 (n={len(polys)})")
+                return {"ok": True, "count": len(polys)}
+            except Exception as e:
+                logger.error(f"{port}/{index}: updateRoi 오류: {e}")
+                return {"ok": False, "error": str(e)}
+
+        @self.app.get("/updateRoe/{index}")
+        async def updateRoe(index):
+            try:
+                index = int(index)
+                s = sharedDetectDataList[index]
+                # 1) 백엔드에서 ROE 좌표 조회
+                resp = requests.get(
+                    f"http://{backendHost}/forVideoServer/getRoe",
+                    params={"port": port, "index": index},
+                    timeout=5
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                raw = data[0] if isinstance(data, list) and data else []
+                # 2) 정규화
+                polys = []
+                for poly in raw:
+                    pts = []
+                    for p in poly:
+                        if "x" in p and "y" in p:
+                            pts.append((int(p["x"]), int(p["y"])))
+                    if len(pts) >= 3:
+                        polys.append(tuple(pts))
+                # 3) 공유변수 교체 + 버전 증가
+                with s.region_lock:
+                    s.roe_coords = tuple(polys)
+                    s.region_ver.value += 1
+                logger.info(f"{port}/{index}: updateRoe 적용 (n={len(polys)})")
+                return {"ok": True, "count": len(polys)}
+            except Exception as e:
+                logger.error(f"{port}/{index}: updateRoe 오류: {e}")
+                return {"ok": False, "error": str(e)}
+
+        '''
         @self.app.get("/stopDetect/{index}")
         async def stopDetect(index):
             try:
                 index = int(index)
-                eventRegionQueue = sharedDetectDataList[index].eventRegionQueue
-                eventRegionQueue.put(['roi'])
-                eventRegionQueue.put([])
-                eventRegionQueue.put(['endSign'])
-                eventRegionQueue. put(None)
-                #print(f"{port}/{index}: stopDetect 성공")
+                sharedDetectDataList[index].runDetectFlag.value = False
                 logger.info(f"{port}/{index}: stopDetect 성공")
+
             except Exception as e:
                 #print(f"stopDetect 오류: {e}")
                 logger.error(f"stopDetect 오류: {e}")
@@ -184,22 +251,40 @@ class DetectVideoServer():
         async def runDetect(index):
             try:
                 index = int(index)
-                roi = requests.get(f"http://{backendHost}/forVideoServer/getRoi?port={port}&index={index}")
-                roi = json.loads(roi.text)[0]
-                eventRegionQueue = sharedDetectDataList[index].eventRegionQueue
-                eventRegionQueue.put(['roi'])
-                for polygon in roi:
-                    for coord in polygon:
-                        eventRegionQueue.put([coord['x'], coord['y']])
-                    eventRegionQueue.put(['endSign'])
-                eventRegionQueue.put(None)
-                #print(f"{port}/{index}: runDetect 성공")
+                sharedDetectDataList[index].runDetectFlag.value = True
                 logger.info(f"{port}/{index}: runDetect 성공")
                 
             except Exception as e:
                 #print(f"runDetect 오류: {e}")
                 logger.error(f"runDetect 오류: {e}")
-            
+        '''
+
+        @self.app.get("/runDetect/{index}")
+        async def runDetect(index):
+            try:
+                index = int(index)
+                s = sharedDetectDataList[index]
+                # 분석은 항상 수행됨. 전송/액션만 허용.
+                s.runDetectFlag.value = True
+                logger.info(f"{port}/{index}: runDetect 성공 (전송/액션 ON)")
+                return {"ok": True}
+            except Exception as e:
+                logger.error(f"{port}/{index}: runDetect 오류: {e}")
+                return {"ok": False, "error": str(e)}
+
+        @self.app.get("/stopDetect/{index}")
+        async def stopDetect(index):
+            try:
+                index = int(index)
+                s = sharedDetectDataList[index]
+                # 분석은 계속. 전송/액션만 차단.
+                s.runDetectFlag.value = False
+                logger.info(f"{port}/{index}: stopDetect 성공 (전송/액션 OFF)")
+                return {"ok": True}
+            except Exception as e:
+                logger.error(f"{port}/{index}: stopDetect 오류: {e}")
+                return {"ok": False, "error": str(e)}
+
         streamClient = [[] for index in range(selectedConfig.wsIndex)]
 
         def _safe_remove_client(lst, ws):
