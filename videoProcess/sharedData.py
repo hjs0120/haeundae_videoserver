@@ -1,4 +1,3 @@
-import os
 from torch.multiprocessing import Queue, Array, Value
 from multiprocessing.sharedctypes import SynchronizedArray, Synchronized
 from multiprocessing import Lock
@@ -11,15 +10,6 @@ class SharedDetectData:
         fullFrameSize = CONFIG["fullFrameSize"]
 
         self.sharedFullFrame: SynchronizedArray = Array(typecode_or_type='c', size_or_initializer=fullFrameSize)
-
-#        self.runDetectFlag: Synchronized = Value('b', False)
-        
-#        self.sharedDetectFlag: Synchronized = Value('b', False)
-#        self.smsDestinationQueue: Queue = Queue()
-#        self.eventRegionQueue: Queue = Queue()
-#        self.ptzCoordsQueue: Queue = Queue()
-#        self.sensitivityQueue: Queue = Queue()
-#        self.settingQueue : Queue = Queue()
 
         # RUN/STOP 제어
         self.runDetectFlag: Synchronized = Value('b', False)
@@ -35,7 +25,6 @@ class SharedDetectData:
         # 기타 큐(필요한 것만 유지)
         self.smsDestinationQueue: Queue = Queue()
         self.ptzCoordsQueue: Queue = Queue()
-        self.sensitivityQueue: Queue = Queue()
         self.settingQueue : Queue = Queue()
 
 

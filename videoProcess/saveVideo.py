@@ -66,12 +66,10 @@ class SaveVideo:
     # ===== 내부 구현 =====
     def _save_numpy_thread(self, frames: List[np.ndarray], fps: int, output_path: str) -> None:
         start_ts = time.time()
-        #print(f"[SaveVideo] start → {output_path}", flush=True)
         logger.info(f"[SaveVideo] start → {output_path}")
 
         # 0) 입력 가드
         if not frames:
-            #print(f"[SaveVideo] skip(empty) → {output_path}", flush=True)
             logger.warning(f"[SaveVideo] skip(empty) → {output_path}")
             return
 
@@ -80,7 +78,6 @@ class SaveVideo:
             outdir = os.path.dirname(output_path) or "."
             os.makedirs(outdir, exist_ok=True)
             if not os.access(outdir, os.W_OK):
-                #print(f"[SaveVideo] WARN: no write permission to dir: {outdir}", flush=True)
                 logger.warning(f"[SaveVideo] WARN: no write permission to dir: {outdir}")
 
             # 2) 기준 해상도(짝수 보정)
@@ -120,7 +117,6 @@ class SaveVideo:
                     if vw.isOpened():
                         opened_path = trial_path
                         opened_fourcc = fourcc_name
-                        #print(f"[SaveVideo] writer opened: {fourcc_name} → {trial_path}", flush=True)
                         logger.info(f"[SaveVideo] writer opened: {fourcc_name} → {trial_path}")
                         break
                     else:
@@ -164,12 +160,10 @@ class SaveVideo:
             os.replace(opened_path, final_dst)  # ASCII → 원래(한글) 경로로 원자적 이동
 
             dur = time.time() - start_ts
-            #print(f"[SaveVideo] done({wrote} frames, {dur:.2f}s, {opened_fourcc}) → {final_dst}", flush=True)
             logger.info(f"[SaveVideo] done({wrote} frames, {dur:.2f}s, {opened_fourcc}) → {final_dst}")
 
 
         except Exception as e:
-            #print(f"[SaveVideo] ERROR {output_path}: {e}", flush=True)
             logger.error(f"[SaveVideo] ERROR {output_path}: {e}")
             #traceback.print_exc()
             # 실패 시 임시파일 정리

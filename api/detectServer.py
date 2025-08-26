@@ -6,7 +6,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, BackgroundTa
 import contextlib
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketState
-from fastapi.responses import HTMLResponse, FileResponse
+#from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import FileResponse
 from fastapi.exception_handlers import HTTPException
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -21,6 +22,8 @@ import asyncio
 from videoProcess.sharedData import SharedDetectData
 from videoProcess.saveVideo import SaveVideo
 from store.configStore import ServerConfig
+
+from types import SimpleNamespace
 
 import time
 
@@ -79,8 +82,9 @@ class DetectVideoServer():
             
         @self.app.get("/checkStorage")
         async def checkStorage():
-            path = "public/eventVideo"
+            path = "public/"
             if not os.path.exists(path):
+                logger.error("Path does not exist")
                 return {"error": "Path does not exist"}
             totalSize = 0
             arr = []
@@ -93,7 +97,7 @@ class DetectVideoServer():
             totalSize = sum(sizes)
             sizeMb = totalSize / (1024 * 1024)
             #print(sizeMb)
-            logger.debug(sizeMb)
+            logger.info(sizeMb)
             return sizeMb
             
         @self.app.get("/download/")
@@ -120,12 +124,22 @@ class DetectVideoServer():
     
         @self.app.get("/updateConfigSetting")
         async def updateSmsDestination(configSetting:str = Query(...)):
-            sensitivity = json.dumps(json.loads(configSetting)["detectionSensitivity"])
+            #logger.info(f"updateConfigSetting called: {configSetting}")
+            try:
+                cfg_raw = json.loads(configSetting) if isinstance(configSetting, str) else configSetting
+                ns = float(cfg_raw.get("detectionSensitivity", 0.5)); ns = max(0.01, min(0.99, ns))
+                dp = int(cfg_raw.get("detectionPeriod", 3)); dp = max(1, dp)
+                ct = int(cfg_raw.get("continuousThreshold", 3)); ct = max(1, ct)
+                payload = SimpleNamespace(detectionSensitivity=ns, detectionPeriod=dp, continuousThreshold=ct)
+                for s in sharedDetectDataList:
+                    s.settingQueue.put(payload)  # 문자열 대신 객체로 전달
+                logger.info(f"updateConfigSetting OK (sens={ns}, period={dp}, cont={ct})")
+                return {"ok": True}
+            except Exception as e:
+                logger.error(f"updateConfigSetting error: {e}")
+                return {"ok": False, "error": str(e)}
 
-            for sharedDetectData in sharedDetectDataList:
-                sharedDetectData.settingQueue.put(configSetting)
-                sharedDetectData.sensitivityQueue.put(sensitivity)
-            return {"message": "roi 적용 성공"}
+
     
         @self.app.get("/updateSmsDestination/{index}")
         async def updateSmsDestination(index, phone:str = Query(...)):
@@ -135,38 +149,6 @@ class DetectVideoServer():
                 sharedDetectDataList[index].smsDestinationQueue.put(phoneNumber)
             sharedDetectDataList[index].smsDestinationQueue.put(None)
             return {"message": "roi 적용 성공"}
-    
-        '''
-        @self.app.get("/updateRoi/{index}")
-        async def updateRoi(index):
-            index = int(index)
-            roi = requests.get(f"http://{backendHost}/forVideoServer/getRoi?port={port}&index={index}")
-            roi = json.loads(roi.text)[0]
-            #print('roi', roi, flush=True)
-            logger.debug('roi', roi)
-            sharedDetectDataList[index].eventRegionQueue.put(['roi'])
-            for polygon in roi:
-                for coord in polygon:
-                    sharedDetectDataList[index].eventRegionQueue.put([coord['x'], coord['y']])
-                sharedDetectDataList[index].eventRegionQueue.put(['endSign'])
-            sharedDetectDataList[index].eventRegionQueue.put(None)
-            return {"message": "roi 적용 성공"}
-                
-        @self.app.get("/updateRoe/{index}")
-        async def updateRoe(index):
-            index = int(index)
-            roe = requests.get(f"http://{backendHost}/forVideoServer/getRoe?port={port}&index={index}")
-            roe = json.loads(roe.text)[0]
-            #print('roe', roe, flush=True)
-            logger.debug('roe', roe)
-            sharedDetectDataList[index].eventRegionQueue.put(['roe'])
-            for polygon in roe:
-                for coord in polygon:
-                    sharedDetectDataList[index].eventRegionQueue.put([coord['x'], coord['y']])
-                sharedDetectDataList[index].eventRegionQueue.put(['endSign'])
-            sharedDetectDataList[index].eventRegionQueue.put(None)
-            return {"message": "roe 적용 성공"}
-        '''
 
         @self.app.get("/updateRoi/{index}")
         async def updateRoi(index):
@@ -235,30 +217,6 @@ class DetectVideoServer():
                 logger.error(f"{port}/{index}: updateRoe 오류: {e}")
                 return {"ok": False, "error": str(e)}
 
-        '''
-        @self.app.get("/stopDetect/{index}")
-        async def stopDetect(index):
-            try:
-                index = int(index)
-                sharedDetectDataList[index].runDetectFlag.value = False
-                logger.info(f"{port}/{index}: stopDetect 성공")
-
-            except Exception as e:
-                #print(f"stopDetect 오류: {e}")
-                logger.error(f"stopDetect 오류: {e}")
-                  
-        @self.app.get("/runDetect/{index}")
-        async def runDetect(index):
-            try:
-                index = int(index)
-                sharedDetectDataList[index].runDetectFlag.value = True
-                logger.info(f"{port}/{index}: runDetect 성공")
-                
-            except Exception as e:
-                #print(f"runDetect 오류: {e}")
-                logger.error(f"runDetect 오류: {e}")
-        '''
-
         @self.app.get("/runDetect/{index}")
         async def runDetect(index):
             try:
@@ -287,14 +245,7 @@ class DetectVideoServer():
 
         streamClient = [[] for index in range(selectedConfig.wsIndex)]
 
-        def _safe_remove_client(lst, ws):
-            """웹소켓 리스트에서 ws를 안전하게 제거"""
-            try:
-                if ws in lst:
-                    lst.remove(ws)
-            except Exception:
-                pass
-        
+
         async def _send_full_once(websocket, sharedDetectDataList, index: int):
             sd = sharedDetectDataList[index]
             full_len = getattr(sd, "sharedFullLen", None)
@@ -302,29 +253,6 @@ class DetectVideoServer():
                 await websocket.send_bytes(bytes(sd.sharedFullFrame[:full_len]))
             else:
                 await websocket.send_bytes(bytes(sd.sharedFullFrame[:]))  # 길이 메타 없으면 전체
-        
-        def _is_ready(sd) -> bool:
-            full_len = getattr(sd, "sharedFullLen", None)
-            if isinstance(full_len, int):
-                return full_len > 0
-            try:
-                buf = getattr(sd, "sharedFullFrame", None)
-                return buf is not None and len(bytes(buf[:])) > 0
-            except Exception:
-                return False
-
-        async def _wait_first_frame(sharedDetectDataList, index, timeout=3.0):
-            t0 = time.monotonic()
-            while time.monotonic() - t0 < timeout:
-                try:
-                    sd = sharedDetectDataList[index]
-                except Exception:
-                    await asyncio.sleep(0.05); continue
-                if _is_ready(sd):
-                    return True
-                await asyncio.sleep(0.05)
-            return False
-        
         
         @self.app.websocket("/ws/stream/{index}")
         async def websocketStream(websocket: WebSocket, index):
@@ -472,8 +400,3 @@ class DetectVideoServer():
             #print(f'{self.serverPort}serve 에러 : {e}')
             logger.error(f'{self.serverPort}serve 에러 : {e}')
         
-def split_path_filename(s):
-    match = re.match(r'(.+)/(.+)', s)
-    if match:
-        return match.groups()
-    return None

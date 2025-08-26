@@ -1,10 +1,7 @@
 from torch.multiprocessing import Queue
-#from concurrent.futures import ThreadPoolExecutor
-
 import os, contextlib, asyncio
 
 from av.container import InputContainer
-#from av.video.frame import VideoFrame
 from av import open
 
 from cv2 import imencode, resize, INTER_AREA, LINE_AA, rectangle, IMWRITE_JPEG_QUALITY
@@ -24,11 +21,8 @@ from collections import deque
 
 from store.cctvStore import DetectCCTV
 from store.configStore import ServerConfig
-from store.smsStore import SmsConfig
 from store.configSettingStore import ConfigSetting
 
-from module.broadcast import Broadcast
-#from videoProcess.detectEventManager import DetectEventManager
 from videoProcess.saveVideo import SaveVideo
 from videoProcess.sharedData import SharedDetectData
 
@@ -43,6 +37,11 @@ import ctypes
 import psutil
 import threading
 import time as _time
+
+from queue import Empty
+from types import SimpleNamespace
+
+from time import monotonic
 
 import logging
 logger = logging.getLogger(__name__)
@@ -76,84 +75,7 @@ def _release_av(container=None, video_stream=None):
         with contextlib.suppress(Exception):
             ctypes.CDLL("libc.so.6").malloc_trim(0)
 
-# --- 메모리 프로브 ---
-def _read_smaps_rollup():
-    """ /proc/self/smaps_rollup에서 Pss/Rss/Swap를 읽어 바이트 단위로 반환 """
-    pss = rss = swap = 0
-    try:
-        with open("/proc/self/smaps_rollup", "r") as f:
-            for line in f:
-                if line.startswith("Pss:"):
-                    # e.g. "Pss:                123456 kB"
-                    pss = int(line.split()[1]) * 1024
-                elif line.startswith("Rss:"):
-                    rss = int(line.split()[1]) * 1024
-                elif line.startswith("Swap:"):
-                    swap = int(line.split()[1]) * 1024
-    except Exception:
-        pass
-    return rss, pss, swap
 
-def _log_mem(tag: str, extra: dict | None = None):
-    """RSS/PSS/스레드/버퍼 길이를 일괄 로깅"""
-    p = psutil.Process(os.getpid())
-    rss = p.memory_info().rss
-    rss2, pss, swap = _read_smaps_rollup()
-    ths = p.num_threads()
-    info = {
-        "RSS_MB(psutil)": f"{rss/1024/1024:.1f}",
-        "RSS_MB(smaps)": f"{rss2/1024/1024:.1f}" if rss2 else "n/a",
-        "PSS_MB": f"{pss/1024/1024:.1f}" if pss else "n/a",
-        "SWAP_MB": f"{swap/1024/1024:.1f}" if swap else "0.0",
-        "threads": ths,
-    }
-    if "frameBuffer" in globals():
-        try:
-            info["buf_len"] = len(frameBuffer)
-            info["buf_item_kb"] = f"{(len(frameBuffer[0])/1024):.0f}" if frameBuffer else "0"
-        except Exception:
-            pass
-    if extra:
-        info.update(extra)
-    logger.info(f"[MEM] {tag} | " + " ".join(f"{k}={v}" for k,v in info.items()))
-
-def start_mem_watch(interval_sec=60):
-    """주기적 메모리 로그(옵션)"""
-    def _loop():
-        while True:
-            _log_mem("periodic")
-            _time.sleep(interval_sec)
-    t = threading.Thread(target=_loop, daemon=True); t.start()
-
-
-def _poly_to_int_coords(poly):
-    """shapely Polygon/MultiPolygon -> [np.ndarray(N,1,2,int32), ...]"""
-    polys = []
-    if getattr(poly, "geoms", None):  # MultiPolygon
-        for g in poly.geoms:
-            polys.extend(_poly_to_int_coords(g))
-        return polys
-    ext = np.array(poly.exterior.coords, dtype=np.int32).reshape(-1,1,2)
-    polys.append(ext)
-    for hole in poly.interiors:  # 필요 없으면 이 블록 제거 가능(구멍 윤곽선도 그림)
-        hole_arr = np.array(hole.coords, dtype=np.int32).reshape(-1,1,2)
-        polys.append(hole_arr)
-    return polys
-
-def draw_polygon_outline_only(image, polygon, color=(0,255,0), thickness=2, label=None):
-    """채우기 없이 외곽선만 그리기"""
-    if polygon is None:
-        return
-    polys = _poly_to_int_coords(polygon)
-    for p in polys:
-        cv2.polylines(image, [p], isClosed=True, color=color, thickness=thickness, lineType=cv2.LINE_AA)
-    if label:
-        # 대충 좌상단 근처에 라벨
-        xs = [pt[0][0] for p in polys for pt in p]
-        ys = [pt[0][1] for p in polys for pt in p]
-        tx = max(0, min(xs)); ty = max(0, min(ys) - 6)
-        cv2.putText(image, label, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (255,255,255), 1, lineType=cv2.LINE_AA)
 
 def draw_roe_roi_outlines(image, roePolygons, roiPolygons,
                           roe_color=(0,0,255), roi_color=(0,255,0), thickness=2):
@@ -164,8 +86,8 @@ def draw_roe_roi_outlines(image, roePolygons, roiPolygons,
         draw_polygon_outline_only(image, roi, color=roi_color, thickness=thickness, label=f"ROI-{i+1}")
 
 
-def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, isRunDetect:bool, broadcast: Broadcast, 
-                  serverConfig: ServerConfig, backendHost:str, phoneList:list[str], smsConfig: SmsConfig | None, saveVideo:SaveVideo, 
+def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, isRunDetect:bool, 
+                  serverConfig: ServerConfig, backendHost:str, saveVideo:SaveVideo, 
                   linkedPtzCCTV, configSetting: ConfigSetting, mqtt_queue: Queue):
     # sourcery skip: de-morgan
     
@@ -177,11 +99,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
 
     fullFrameQuality = CONFIG["fullFrameQuality"]
     maxObjectHeight = CONFIG["maxObjectHeight"]
-
-    #rois = detectCCTV.roi
-    #roiCoords = [[[item['x'], item['y']] for item in roi] for roi in rois]
-    #roes = detectCCTV.roe
-    #roeCoords = [[[item['x'], item['y']] for item in roe] for roe in roes]
 
     # === 초기 RUN/STOP 상태 반영 ===
     s = sharedDetectData
@@ -207,7 +124,19 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 sharedDetectData.roe_coords = base_roe
             # 최초 세팅은 버전 증가 없이도 OK (원하면 +=1)
 
-
+    # === 초기 CONFIG 반영 (서버 기동 직후에도 즉시 일관 상태 확보) ===
+    # - 우선순위: configSetting.* 가 있으면 그 값을 사용, 없으면 detectCCTV/디폴트
+    init_sens = float(getattr(configSetting, "detectionSensitivity", 0.5))
+    init_sens = max(0.01, min(0.99, init_sens))
+    init_period = int(getattr(configSetting, "detectionPeriod", 3)); init_period = max(1, init_period)
+    init_cont   = int(getattr(configSetting, "continuousThreshold", 3)); init_cont = max(1, init_cont)
+    # 실제 사용 객체들에 적용
+    configSetting.detectionSensitivity = init_sens
+    configSetting.detectionPeriod = init_period
+    configSetting.continuousThreshold = init_cont
+    # 마지막 적용 설정 스냅샷(로그/디버깅용)
+    cfg = SimpleNamespace(detectionSensitivity=init_sens, detectionPeriod=init_period, continuousThreshold=init_cont)
+    logger.info(f"{cctvIndex}: initial cfg applied -> sens={cfg.detectionSensitivity}, period={cfg.detectionPeriod}, cont={cfg.continuousThreshold}")
     
     # 연속 실패 카운트(프레임 변환/유효성 실패)
     fail_count = 0
@@ -216,28 +145,14 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     fps = 15
     maxDuration = 20  
     saveBufferSize = int(maxDuration * fps)
-    #frameBuffer: deque[VideoFrame] = deque(maxlen=saveBufferSize)
-    #frameBuffer: deque[np.ndarray] = deque(maxlen=saveBufferSize)
     frameBuffer: deque[bytes] = deque(maxlen=saveBufferSize)
     
-
-    maxStorageSize = int(configSetting.maxStorageSize)
-
-    #logger.info("TP-1")
-    #logger.info(maxStorageSize)
-    
-    #detectEventManager = DetectEventManager(detectCCTV, serverConfig, backendHost, broadcast, 
-    #                                        sharedDetectData, phoneList, smsConfig, linkedPtzCCTV, configSetting)
     # YOLO INIT
     try:
-        #model = YOLO('yolov8s.pt').cuda()
         model = YOLO('yolov8s.pt').cuda()
-        #print("지능형 AI 모델 Load 성공", flush=True)
         logger.info("능형 AI 모델 Load 성공")
     except Exception as e:
-        #print("지능형 AI 모델 Load 실패", flush=True)
         logger.error("능형 AI 모델 Load 실패")
-        #print("지능형 Data Load 실패", flush=True)
         
     options={'rtsp_transport': 'tcp',
              'max_delay': '1000',
@@ -249,7 +164,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     src_type = "rtsp"
     prev_time = None
     
-    #start_mem_watch(60)
     while url is not None:
         try:
             # 재오픈 루프에서 참조 초기화 (finally에서 항상 정리)
@@ -273,7 +187,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 else:
                     # 로컬 파일 또는 HTTP 비디오
                     # 분석 버퍼 최소화 옵션으로 내부 버퍼 확장 억제
-                    #_log_mem("before_open", {"url": url})
                     container: InputContainer = open(
                         url, 'r',
                         options={
@@ -282,7 +195,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                         }
                     )
                     src_type = "video"
-                    #_log_mem("after_open", {"src": src_type})
             except Exception as e:
                 #print(f"{cctvIndex}번 영상 open 실패: {e}", flush=True)
                 logger.error(f"{cctvIndex}번 영상 open 실패: {e}")
@@ -316,7 +228,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                     height, width, _ = frame.to_ndarray(format='bgr24').shape
                     #print(url, 'origin Video Size', height, width)
                     logger.info("origin Video Size %dx%d | url=%s", height, width, url)
-                    #_log_mem("after_first_frame")
                     getFrameFlag = True
                     break
                 if getFrameFlag:
@@ -345,10 +256,13 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
             cooldown_until = -1                     # 이 프레임 전까지 트리거 금지            
             
             prev_time = None
+
+            last_heartbeat = monotonic()
+            frames = 0
             
             ### VIDEO PROCESS ###
-           #for packet in container.demux(videoStream) :
-           #     for frame in packet.decode(): 
+
+            if src_type == "video": prev_frame_idx = -1 # 파일 소스에서 런타임 리와인드 감지용
 
             # --- demux loop with rewind for file inputs ---
             demux_iter = container.demux(videoStream)
@@ -368,6 +282,12 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             except Exception:
                                 pass
                             cnt = 0; fail_count = 0; saveVideoFrameCnt = 0
+                            # ★ 루프 영상: 이전 요청/쿨다운이 과거 프레임 기준으로 고여 있으면 영원히 시작 못 함
+                            saveVideoRequests.clear()
+                            cooldown_until = -1
+                            intrusion_streak = 0
+                            prev_frame_idx = -1
+                            logger.info(f"{cctvIndex}: rewind handled after EOF → reset pending requests/cooldown")
                             continue
                         except Exception as _rew_e:
                             logger.warning(f"seek(0) failed; will reopen: {_rew_e}")
@@ -419,23 +339,49 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                 f"(roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})"
                             )
 
+                        # === SETTINGS UPDATE (non-blocking, 서버에서 파싱된 객체 수신) ===
+                        _cfg = getJsonQueue(sharedDetectData.settingQueue)
+                        if _cfg is not None:
+                            try:
+                                # 서버가 SimpleNamespace로 넣어줌. 혹시 dict/str 오더라도 호환.
+                                if isinstance(_cfg, dict):
+                                    _cfg = types.SimpleNamespace(**_cfg)
+                                elif isinstance(_cfg, str):
+                                    _cfg = types.SimpleNamespace(**json.loads(_cfg))
 
+                                if hasattr(_cfg, "detectionSensitivity"):
+                                    ns = float(_cfg.detectionSensitivity)
+                                    ns = max(0.01, min(0.99, ns))
+                                    if ns != configSetting.detectionSensitivity:
+                                        logger.info(f"{cctvIndex}: sensitivity {configSetting.detectionSensitivity} -> {ns}")
+                                    configSetting.detectionSensitivity = ns
+                                if hasattr(_cfg, "detectionPeriod"):
+                                    dp = int(_cfg.detectionPeriod)
+                                    if dp != configSetting.detectionPeriod:
+                                        logger.info(f"{cctvIndex}: detectionPeriod {configSetting.detectionPeriod} -> {dp}")
+                                    configSetting.detectionPeriod = dp
+                                if hasattr(_cfg, "continuousThreshold"):
+                                    ct = int(_cfg.continuousThreshold)
+                                    if not hasattr(configSetting, "continuousThreshold") or ct != configSetting.continuousThreshold:
+                                        logger.info(f"{cctvIndex}: continuousThreshold {getattr(configSetting,'continuousThreshold',None)} -> {ct}")
+                                    configSetting.continuousThreshold = ct
 
-                        # DRAW REGION
-                        newDetectionSensitivity = getJsonQueue(sharedDetectData.sensitivityQueue)
-                        if newDetectionSensitivity is not None:
-                            detectCCTV.detectionSensitivity = newDetectionSensitivity
-                            
-                        newConfigSetting = getJsonQueue(sharedDetectData.settingQueue)
-                        if newConfigSetting is not None:
-                            configSetting.getData(newConfigSetting) 
-                        #    detectEventManager.updateContinuousThreshold(configSetting.continuousThreshold)
-                        
+                                # 마지막 적용 설정 스냅샷 갱신
+                                cfg = SimpleNamespace(detectionSensitivity=configSetting.detectionSensitivity,
+                                                      detectionPeriod=configSetting.detectionPeriod,
+                                                      continuousThreshold=configSetting.continuousThreshold)
+                                logger.info(
+                                   f"{cctvIndex}: cfg applied -> sens={cfg.detectionSensitivity}, "
+                                   f"period={cfg.detectionPeriod}, cont={cfg.continuousThreshold}"
+                                )
+                            except Exception as _ce:
+                                logger.warning(f"{cctvIndex}: bad configSetting payload: {_cfg!r} ({_ce})")
+
                         # YOLO DETECT
                         if cnt > configSetting.detectionPeriod:
                             cnt = 0
                             xyxys = []
-                            results = model.predict(image, verbose=False, conf=detectCCTV.detectionSensitivity, iou=0.7, imgsz=imgsz, half=True, device='0', classes=0)
+                            results = model.predict(image, verbose=False, conf=configSetting.detectionSensitivity, iou=0.7, imgsz=imgsz, half=True, device='0', classes=0)
                             eventObjectCoords = []
                             roi_intrusion_this_frame = False # 이번 프레임에서 ROI 진입 여부
 
@@ -447,8 +393,9 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                     objectHeight = abs(y2 - y1)
                                     pos = Point(x, y)
 
-                                    in_roe = any(pos.within(p) for p in roePolygons) if roePolygons else False
-                                    in_roi = any(pos.within(p) for p in roiPolygons) if roiPolygons else False
+                                    in_roe = any(p.covers(pos) for p in roePolygons) if roePolygons else False
+                                    in_roi = any(p.covers(pos) for p in roiPolygons) if roiPolygons else False
+                                    
 
                                     if (not in_roe) and (objectHeight < maxObjectHeight):
                                         if in_roi:
@@ -466,7 +413,17 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             else:
                                 intrusion_streak = 0
 
-                            if intrusion_streak == 3:
+                            # 디버그: 이번 사이클 개괄(박스/ROI/ROE 히트/연속 카운트)
+                            try:
+                                box_count = int(sum(len(r.boxes) for r in results))
+                            except Exception:
+                                box_count = 0
+                            logger.debug(
+                                f"{cctvIndex}: det_cycle cnt={cnt} boxes={box_count} streak={intrusion_streak} "
+                                f"cooldown={cooldown_until} runFlag={int(sharedDetectData.runDetectFlag.value)}"
+                            )
+
+                            if intrusion_streak == configSetting.continuousThreshold and sharedDetectData.runDetectFlag.value:
                                 ts = time.strftime("%Y%m%d_%H%M%S")
                                 safe_name = detectCCTV.cctvName.replace(" ", "_").replace("#", "")
                                 outdir = f"public/eventVideo/{detectCCTV.index}"
@@ -480,9 +437,17 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                 # ① 진행/대기 중이면 새 요청 금지
                                 if saving_lock.is_set() or len(saveVideoRequests) > 0:
                                     # 이미 진행 중이거나 대기 요청이 있으면 스킵
+                                    #logger.info(f"{cctvIndex}: saving_lock.is_set={saving_lock.is_set()} saveVideoRequests={len(saveVideoRequests)}")
+                                    logger.info(
+                                        f"{cctvIndex}: saving_lock={saving_lock.is_set()} "
+                                        f"saveVideoRequests={len(saveVideoRequests)} "
+                                        f"frame={saveVideoFrameCnt} cooldown_until={cooldown_until}"
+                                    )                                    
                                     pass
                                 # ② 쿨다운 중이면 금지
                                 elif saveVideoFrameCnt < cooldown_until:
+                                    #logger.info(f"{cctvIndex}: saveVideoFrameCnt ={saveVideoFrameCnt}, cooldown_until={cooldown_until}")
+                                    logger.info(f"{cctvIndex}: in cooldown: frame={saveVideoFrameCnt}, until={cooldown_until}")
                                     pass
                                 else:
                                     # 대기 1건만 등록 (N0 저장)
@@ -509,23 +474,22 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                        
                                     # === MQTT: 중앙 퍼블리셔 큐에 전송 ===
                                     try:
-                                        if sharedDetectData.runDetectFlag.value:
-                                            #topic_base = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
-                                            #topic = f"{topic_base}/roi/{cctvIndex}"
-                                            topic = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
-                                            payload = {
-                                                "cctvIndex": int(detectCCTV.index),
-                                                "objectCoord": [[int(c[0]), int(c[1])] for c in eventObjectCoords],
-                                                "savedImageDir": (
-                                                    f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputImg}'
-                                                    if snap_ok else None
-                                                ),
-                                                "savedVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputVideo}',
-                                                "dateTime": ts,
-                                                #"savedPtzVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{self.ptzOutputVideo}',
-                                            }
-                                            if mqtt_queue is not None:
-                                                mqtt_queue.put_nowait({"topic": topic, "payload": payload, "qos": 0, "retain": False})
+                                        #topic_base = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
+                                        #topic = f"{topic_base}/roi/{cctvIndex}"
+                                        topic = CONFIG.get("MQTT_TOPIC", "detect/events").rstrip("/")
+                                        payload = {
+                                            "cctvIndex": int(detectCCTV.index),
+                                            "objectCoord": [[int(c[0]), int(c[1])] for c in eventObjectCoords],
+                                            "savedImageDir": (
+                                                f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputImg}'
+                                                if snap_ok else None
+                                            ),
+                                            "savedVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputVideo}',
+                                            "dateTime": ts,
+                                            #"savedPtzVideoDir": f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{self.ptzOutputVideo}',
+                                        }
+                                        if mqtt_queue is not None:
+                                            mqtt_queue.put_nowait({"topic": topic, "payload": payload, "qos": 0, "retain": False})
                                     except Exception as _mqe:
                                         logger.warning(f"MQTT queue push failed: {_mqe}")
 
@@ -575,6 +539,18 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             if ok:
                                 frameBuffer.append(enc.tobytes())
                             saveVideoFrameCnt += 1
+
+                            # ★ 파일 소스 런타임 리와인드 감지(프레임 인덱스 감소)
+                            if src_type == "video" and prev_frame_idx != -1 and saveVideoFrameCnt < prev_frame_idx:
+                                logger.warning(
+                                    f"{cctvIndex}: rewind detected (frame {prev_frame_idx}->{saveVideoFrameCnt}) → "
+                                    f"clear pending & reset cooldown"
+                                )
+                                saveVideoRequests.clear()
+                                cooldown_until = -1
+                                intrusion_streak = 0
+                            prev_frame_idx = saveVideoFrameCnt
+
                         except Exception as _buf_e:
                             #print(f"[CH{cctvIndex}] drop bad frame before save: {_buf_e}", flush=True)
                             logger.error(f"[CH{cctvIndex}] drop bad frame before save: {_buf_e}")
@@ -627,7 +603,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 if hasattr(container, 'close'):
                     container.close()
                     _release_av(container, videoStream)
-                    #_log_mem("after_release(except)")
             except Exception as e:
                 #print(f'container 조회 실패 : {e}', flush=True)
                 logger.error(f'container 조회 실패 : {e}')
@@ -651,7 +626,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 _release_av(container, videoStream)
             except Exception as e:
                 logger.warning(f'AV release warn: {e}')
-            #_log_mem("after_release(finally)")
             # 저장 버퍼/스냅샷 등 자료구조도 파일 재오픈 직전에 초기화(중복 보관 방지)
             try:
                 if "frameBuffer" in locals() and hasattr(frameBuffer, "clear"):
@@ -665,7 +639,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 image = None
             except Exception:
                 pass
-                
+
 def encode_webp_pillow(image, quality=75):
     return imencode('.jpg', image, [IMWRITE_JPEG_QUALITY, quality])[1]
 
@@ -679,12 +653,48 @@ def plotBox(x, img, color=None, line_thickness=2):
     rectangle(img, c1, c2, color, thickness=line_thickness, lineType=LINE_AA)
     
 def getJsonQueue(jsonQueue: Queue):
+    '''
     try:
         data = jsonQueue.get_nowait()
     except Exception: 
         return None
     
     return json.loads(data)
+    '''
+
+    """
+    설정 큐에서 최신값만 꺼내 반환.
+    - 큐 비어있으면 None
+    - 문자열(JSON)이면 파싱 후 dict 반환
+    - dict 또는 SimpleNamespace면 그대로 반환
+    - bytes/bytearray면 UTF-8로 디코드 후 JSON 파싱 시도
+    """
+    last = None
+    while True:
+        try:
+            v = q.get_nowait()
+        except Empty:
+            break
+        except Exception:
+            # 드문 cross-process 오류 안전장치
+            break
+        else:
+            last = v
+    if last is None:
+        return None
+    if isinstance(last, (dict, SimpleNamespace)):
+        return last
+    if isinstance(last, (bytes, bytearray)):
+        try:
+            last = last.decode("utf-8")
+        except Exception:
+            return None
+    if isinstance(last, str):
+        try:
+            return json.loads(last)
+        except Exception:
+            return None
+    return last    
         
 def updateSmsDestination(smsDestinationQueue: Queue):
     try:

@@ -3,8 +3,6 @@ CONFIG = {
     "BACKEND_HOST": "192.168.0.3:7000",
 
     # Sizes
-    "MINI_SIZE": [480, 338],
-    "MEDIUM_SIZE": [960, 560],
     "fullFrameSize": 300000,
     "fourthSplitSize": 75000,
     "thirtySplitSize": 10000,
