@@ -498,6 +498,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             # N ≥ N₀ + (20초 − 5초) = N₀ + 15초 프레임
                             if saveVideoFrameCnt >= req_cnt + (saveBufferSize - fps*5):
                                 if not saving_lock.is_set():
+                                    '''
                                     saving_lock.set()
                                     # numpy 스냅샷을 넘겨 저장(완료되면 lock 해제)
                                     snapshot = list(frameBuffer)   # list[bytes]
@@ -510,6 +511,35 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                             cooldown_until = saveVideoFrameCnt + cooldown_frames
                                     t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
                                     t.start()
+                                    '''
+                                    saving_lock.set()
+                                    # JPEG 바이트 → numpy(BGR)로 복원 후 ffmpeg 저장 경로 사용
+                                    snapshot = list(frameBuffer)   # list[bytes]
+                                    def _job(frames_bytes, fps_val, path):
+                                        try:
+                                            frames_np = []
+                                            for b in frames_bytes:
+                                                img = cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR)
+                                                if img is None:
+                                                    continue
+                                                h, w = img.shape[:2]
+                                                # H.264(yuv420p) 호환: 짝수 해상도로 보정
+                                                tw, th = w - (w % 2), h - (h % 2)
+                                                if (tw != w) or (th != h):
+                                                    img = cv2.resize(img, (tw, th), interpolation=cv2.INTER_LINEAR)
+                                                frames_np.append(img)
+                                            if frames_np:
+                                                # ffmpeg 경로로 저장 (SaveVideo.SAVE_METHOD="ffmpeg")
+                                                saveVideo.save_numpy(frames_np, fps_val, path)
+                                            else:
+                                                logger.warning(f"skip save: decoded 0 frames → {path}")
+                                        finally:
+                                            saving_lock.clear()
+                                            nonlocal cooldown_until
+                                            cooldown_until = saveVideoFrameCnt + cooldown_frames
+                                    t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
+                                    t.start()
+
                                 # 어떤 경우든 같은 요청은 제거(중복 저장 방지)
                                 keys_to_delete.append(out_path)
                                 

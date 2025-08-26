@@ -1,13 +1,16 @@
 import os
 import shutil
 
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, BackgroundTasks
 import contextlib
 from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocketState
 #from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import Request
+import re
 from fastapi.exception_handlers import HTTPException
 from hypercorn.config import Config
 from hypercorn.asyncio import serve
@@ -45,7 +48,7 @@ class DetectVideoServer():
         )
         
         self.app.mount("/public", StaticFiles(directory="public"), name="public")
-                
+
         @self.app.delete("/deleteFile/{file:path}")
         async def delete_file(file: str):
             print(file)
