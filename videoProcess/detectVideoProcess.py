@@ -512,6 +512,8 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                     t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
                                     t.start()
                                     '''
+
+                                    '''
                                     saving_lock.set()
                                     # JPEG 바이트 → numpy(BGR)로 복원 후 ffmpeg 저장 경로 사용
                                     snapshot = list(frameBuffer)   # list[bytes]
@@ -533,6 +535,34 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                                 saveVideo.save_numpy(frames_np, fps_val, path)
                                             else:
                                                 logger.warning(f"skip save: decoded 0 frames → {path}")
+                                        finally:
+                                            saving_lock.clear()
+                                            nonlocal cooldown_until
+                                            cooldown_until = saveVideoFrameCnt + cooldown_frames
+                                    t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
+                                    t.start()
+                                    '''
+                                    #logger.info(f"{cctvIndex}: spawning save thread for {out_path} ({len(frameBuffer)} frames)")
+                                    saving_lock.set()
+                                    snapshot = list(frameBuffer)   # list[bytes]
+                                    # 스레드 시작 직전 상태 로그 (길이/fps/경로)
+                                    logger.info(
+                                        f"[SaveSpawn] frames={len(snapshot)} fps={fps} → {out_path}"
+                                    )
+                                    def _job(frames_bytes, fps_val, path):
+                                        try:
+                                            logger.info(f"[SaveJob] start frames={len(frames_bytes)} fps={fps_val} → {path}")
+                                            if not frames_bytes:
+                                                logger.warning(f"[SaveJob] skip(empty) → {path}")
+                                                return
+                                            if not isinstance(fps_val, (int, float)) or fps_val <= 0:
+                                                logger.error(f"[SaveJob] bad fps={fps_val} → {path}")
+                                                return
+                                            saveVideo.save_jpegpipe(frames_bytes, fps_val, path)
+                                            logger.info(f"[SaveJob] done → {path}")
+                                        except Exception:
+                                            # 스레드 예외 삼킴 방지
+                                            logger.exception(f"[SaveJob] exception → {path}")
                                         finally:
                                             saving_lock.clear()
                                             nonlocal cooldown_until
@@ -567,8 +597,26 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
 
                             ok, enc = cv2.imencode('.jpg', image, [cv2.IMWRITE_JPEG_QUALITY, 65])
                             if ok:
-                                frameBuffer.append(enc.tobytes())
-                            saveVideoFrameCnt += 1
+                                # enc: np.ndarray (uint8 1-D). tobytes()는 한 번만 호출해 재사용
+                                jpg_bytes = enc.tobytes()
+
+                                # 1) 이벤트 저장용 순환버퍼에 JPEG 바이트 push
+                                frameBuffer.append(jpg_bytes)
+                                saveVideoFrameCnt += 1
+
+                                # 2) 실시간 공유메모리에도 같은 JPEG 바이트 복사 (초과 방지)
+                                dst = sharedDetectData.sharedFullFrame
+                                maxlen = len(dst)
+                                n = len(jpg_bytes)
+                                if n > maxlen:
+                                    n = maxlen
+                                # 불필요한 복사 줄이기 위해 memoryview 사용
+                                dst[:n] = memoryview(jpg_bytes)[:n]
+                                # 길이 메타가 있다면 갱신 (없으면 무시)
+                                try:
+                                    sharedDetectData.sharedFullLen.value = n
+                                except Exception:
+                                    pass
 
                             # ★ 파일 소스 런타임 리와인드 감지(프레임 인덱스 감소)
                             if src_type == "video" and prev_frame_idx != -1 and saveVideoFrameCnt < prev_frame_idx:
@@ -585,13 +633,15 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             #print(f"[CH{cctvIndex}] drop bad frame before save: {_buf_e}", flush=True)
                             logger.error(f"[CH{cctvIndex}] drop bad frame before save: {_buf_e}")
 
+                        
+
                         # ENCODE & SHARE
-                        buffer = encode_webp_pillow(image, fullFrameQuality)
+                        #buffer = encode_webp_pillow(image, fullFrameQuality)
 
-                        if len(buffer) > len(sharedDetectData.sharedFullFrame):
-                            buffer = buffer[:len(sharedDetectData.sharedFullFrame)]
+                        #if len(buffer) > len(sharedDetectData.sharedFullFrame):
+                        #    buffer = buffer[:len(sharedDetectData.sharedFullFrame)]
 
-                        sharedDetectData.sharedFullFrame[:len(buffer)] = buffer.tobytes()
+                        #sharedDetectData.sharedFullFrame[:len(buffer)] = buffer.tobytes()
 
                     except Exception as e:
                         # 변환/유효성 실패 → 카운트 증가 후 임계치 검사
