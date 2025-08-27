@@ -424,6 +424,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             )
 
                             if intrusion_streak == configSetting.continuousThreshold and sharedDetectData.runDetectFlag.value:
+                                ptz_pos = eventObjectCoords[-1] if eventObjectCoords else None
                                 ts = time.strftime("%Y%m%d_%H%M%S")
                                 safe_name = detectCCTV.cctvName.replace(" ", "_").replace("#", "")
                                 outdir = f"public/eventVideo/{detectCCTV.index}"
@@ -480,6 +481,12 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                                         payload = {
                                             "cctvIndex": int(detectCCTV.index),
                                             "objectCoord": [[int(c[0]), int(c[1])] for c in eventObjectCoords],
+                                            "pos": (
+                                                {"x": int(ptz_pos[0]), "y": int(ptz_pos[1])}
+                                                if ptz_pos else None
+                                            ),
+                                            # 좌표계 기준(PTZ 서버에서 필요시 정규화에 사용)
+                                            "frameSize": {"w": int(width), "h": int(height)},
                                             "savedImageDir": (
                                                 f'http://{detectCCTV.wsUrl["ip"]}:{detectCCTV.wsUrl["port"]}/{outputImg}'
                                                 if snap_ok else None
