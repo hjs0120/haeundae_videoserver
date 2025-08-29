@@ -22,6 +22,7 @@ import time
 import logging
 import logging.config
 import json
+import signal, sys
 
 from config import CONFIG
 
@@ -267,4 +268,16 @@ if __name__ == "__main__":
     logger.error("에러 발생 예시")
 
     videoserver = VideoServer(CONFIG["BACKEND_HOST"])
+
+    def _graceful_exit(signum, frame):
+        logger.info(f"SIG{signum} received -> shutting down children and exiting")
+        try:
+            videoserver.killProcess()  # 자식 프로세스 정리
+        except Exception as e:
+            logger.error(f"killProcess error: {e!r}")
+        sys.exit(0)  # PID1 종료 → 컨테이너 종료(재시작 정책 있으면 재기동)
+
+    signal.signal(signal.SIGTERM, _graceful_exit)
+    signal.signal(signal.SIGINT,  _graceful_exit)
+
     videoserver.main()

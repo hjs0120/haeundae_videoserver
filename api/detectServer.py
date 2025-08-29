@@ -28,7 +28,8 @@ from store.configStore import ServerConfig
 
 from types import SimpleNamespace
 
-import time
+import time, os, signal
+from pydantic import BaseModel
 
 import logging
 logger = logging.getLogger(__name__)
@@ -48,6 +49,36 @@ class DetectVideoServer():
         )
         
         self.app.mount("/public", StaticFiles(directory="public"), name="public")
+
+
+        class RestartRequest(BaseModel):
+            confirm: str
+
+        def _shutdown_after(delay: float = 0.2):
+            time.sleep(delay)
+            try:
+                # 1) 컨테이너의 마스터 프로세스(PID 1) 종료 시도
+                os.kill(1, signal.SIGTERM)
+            except Exception as e:
+                logger.error(f"SIGTERM pid1 failed: {e!r}")
+            # 2) 안전망: 그래도 안 내려가면 강제 종료
+            try:
+                time.sleep(1.0)
+                os.kill(1, signal.SIGKILL)
+            except Exception as e:
+                logger.error(f"SIGKILL pid1 failed: {e!r}")
+                # 최후 수단: 현재 프로세스 종료(워커만 죽을 수 있음)
+                os._exit(0)
+
+        @self.app.post("/restart")
+        def restart(req: RestartRequest, background: BackgroundTasks):
+            if req.confirm.lower() != "yes":
+                return {"ok": False, "msg": 'send {"confirm": "yes"} in JSON body'}
+
+            logger.info("system restart by request")
+            # ✅ 응답은 즉시 반환하고, 종료는 백그라운드에서
+            background.add_task(_shutdown_after, 0.2)
+            return {"ok": True, "msg": "app will restart shortly"}
 
         @self.app.delete("/deleteFile/{file:path}")
         async def delete_file(file: str):
