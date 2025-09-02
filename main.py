@@ -92,26 +92,70 @@ class VideoServer():
             else: 
                 logger.error("존재하지 않는 서버 인덱스 입니다, 다시입력해 주세요")
                 
-    def matchingApiAndProcess(self) -> dict[ServerConfig, dict[str, dict[int, list[DetectCCTV]]]]:
-            detectCnt = 0
+    def _filter_by_server_idx(self, cams, server_idx: int):
+        """videoServerIdx == server_idx 인 카메라만 반환 (없거나 None이면 제외)"""
+        out = []
+        for c in cams:
+            try:
+                v = getattr(c, "videoServerIdx", None)
+                # 문자열로 올 수도 있으니 안전 변환
+                if v is not None:
+                    try: v = int(v)
+                    except: pass
+                if v == server_idx:
+                    out.append(c)
+            except Exception:
+                pass
+        return out
 
-            matchedServer:dict[ServerConfig, dict[str, dict[int, list[DetectCCTV ]]]] = {}
-            
-            for serverConfig in self.config:
-                matchedDetectPort:dict[int, list[DetectCCTV]] = {}
-                matchedServer[serverConfig] = {}
-                
-                for detectPort in serverConfig.detectPortList:
-                    detectCCTVList: list[DetectCCTV] = []
-                    for _ in range(serverConfig.wsIndex):
-                        detectCCTVList.append(self.detectCCTV[detectCnt] if len(self.detectCCTV) > detectCnt else DetectCCTV())
-                        detectCnt += 1
-                    matchedDetectPort[detectPort] = detectCCTVList
-                    
+    def _build_matched_for_selected_server(self, selectedConfig, server_idx: int):
+        """
+        선택된 서버 설정(selectedConfig)에 대해:
+        - 전체 리스트에서 videoServerIdx == server_idx 인 것만 추려
+        - selectedConfig.detectPortList / ptzPortList × wsIndex 로 슬롯 매핑
+        - setProcess에 바로 전달 가능한 dict를 반환
+        """
+        detects = self._filter_by_server_idx(self.detectCCTV, server_idx)
+        #ptzs    = self._filter_by_server_idx(self.ptzCCTV,    server_idx)
 
-                matchedServer[serverConfig]["detect"] = matchedDetectPort
-                
-            return matchedServer
+        # (선택) 안정된 순서 보장을 원하면 index 기준 정렬
+        try:
+            detects.sort(key=lambda x: (x.index is None, x.index))
+            #ptzs.sort(key=lambda x: (x.index is None, x.index))
+        except Exception:
+            pass
+
+        matched_detect = {}
+        #matched_ptz    = {}
+
+        # Detect 슬롯 채우기
+        d_cur = 0
+        for port in selectedConfig.detectPortList:
+            bucket = []
+            for _ in range(selectedConfig.wsIndex):
+                if d_cur < len(detects):
+                    bucket.append(detects[d_cur])
+                    d_cur += 1
+                else:
+                    bucket.append(DetectCCTV())  # 빈 슬롯 패딩
+            matched_detect[port] = bucket
+
+        '''
+        # PTZ 슬롯 채우기
+        p_cur = 0
+        for port in selectedConfig.ptzPortList:
+            bucket = []
+            for _ in range(selectedConfig.wsIndex):
+                if p_cur < len(ptzs):
+                    bucket.append(ptzs[p_cur])
+                    p_cur += 1
+                else:
+                    bucket.append(PtzCCTV())     # 빈 슬롯 패딩
+            matched_ptz[port] = bucket
+
+        return {"detect": matched_detect, "ptz": matched_ptz}
+        '''
+        return {"detect": matched_detect}
         
     def updateWsIndex(self):
         for cctvType, cctvData in self.compareWsIndex.items():
@@ -127,15 +171,15 @@ class VideoServer():
                                 logger.error("setDetectWsIndex Fail")
                         except Exception as e :
                             logger.error(f"setDetectWsIndex Fail : {e}")
-                        
-
             else:
                 pass
               
     def main(self):
-        matchedServer = self.matchingApiAndProcess()
         selectedConfig = self.selectServerConfig()
-        self.setProcess(matchedServer, selectedConfig)
+        server_idx = int(CONFIG["SERVER_INDEX"])  # 환경/CONFIG에서 사용하던 값
+        selectedMatchedServer = self._build_matched_for_selected_server(selectedConfig, server_idx)
+        self.setProcess(selectedMatchedServer, selectedConfig)
+
         self.updateWsIndex()
         self.runProcess()
         
@@ -147,8 +191,7 @@ class VideoServer():
             
         # self.killProcess()
         
-    def setProcess(self, matchedServer:dict[ServerConfig, dict[str, dict[int, list[DetectCCTV]]]], selectedConfig:ServerConfig):
-        selectedMatchedServer = matchedServer[selectedConfig]
+    def setProcess(self, selectedMatchedServer: dict[str, dict[int, list]], selectedConfig: ServerConfig):
         selectedSetting = next((configSetting for configSetting in self.configSetting if configSetting.index == selectedConfig.index), None)
         broadcasts: dict[Broadcast, list[int]] = {}
         self.compareWsIndex:dict[str, dict[DetectCCTV, dict]] = {}
@@ -158,8 +201,9 @@ class VideoServer():
             if typeFlag == 'detect':
                 for detectCCTVs in MatchedServerData.values():
                     for detecCCTV in detectCCTVs:
-                        if maxIndex < detecCCTV.index:
-                            maxIndex = detecCCTV.index
+                        idx = getattr(detecCCTV, "index", None)
+                        if isinstance(idx, int) and idx > maxIndex:
+                            maxIndex = idx
         maxIndex += 1    
         
         self.detectVideoServers: list[DetectVideoServer] = []

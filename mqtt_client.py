@@ -23,7 +23,7 @@ def _to_str(payload: Any) -> str | bytes:
 def publisher_loop(q: Queue):
     host = CONFIG.get("MQTT_BROKER", "127.0.0.1")
     port = int(CONFIG.get("MQTT_PORT", 1883))
-    client_id = CONFIG.get("CLIENT_ID", "cv-detect")
+    client_id = CONFIG.get("CLIENT_ID_detect_server", "detect-server")
     username = CONFIG.get("MQTT_USERNAME") or None
     password = CONFIG.get("MQTT_PASSWORD") or None
 
