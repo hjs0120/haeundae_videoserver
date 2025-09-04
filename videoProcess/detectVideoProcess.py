@@ -334,25 +334,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                         # ===== 정상 프레임이므로 카운트 리셋 =====
                         fail_count = 0
 
-                        '''
-                        # === REGION UPDATE (버전 비교 → 변경시에만 재생성) ===
-                        shared_ver = sharedDetectData.region_ver.value
-                        if shared_ver != local_region_ver:
-                            logger.info(f"{cctvIndex}: prev region {roiPolygons} / {roePolygons}")
-                            with sharedDetectData.region_lock:
-                                _roi_coords = sharedDetectData.roi_coords or tuple()
-                                _roe_coords = sharedDetectData.roe_coords or tuple()
-                                local_region_ver = sharedDetectData.region_ver.value
-
-                            roiPolygons = [Polygon(poly) for poly in _roi_coords]
-                            roePolygons = [Polygon(poly) for poly in _roe_coords]
-                            logger.info(
-                                f"{cctvIndex}: ROI/ROE 업데이트 반영 "
-                                f"(roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})"
-                                f"{cctvIndex}: after region {roiPolygons} / {roePolygons}"
-                            )
-                        '''
-
                         # === REGION UPDATE by QUEUE (non-blocking, 즉시 반영) ===
                         _rq = updateRegions(sharedDetectData.regionQueue)
                         if _rq is not None:
