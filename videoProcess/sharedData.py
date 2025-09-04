@@ -22,10 +22,13 @@ class SharedDetectData:
         self.region_ver = Value('q', 0)   # 좌표 갱신 시 +1
         self.region_lock = Lock()
 
+            
+
         # 기타 큐(필요한 것만 유지)
         self.smsDestinationQueue: Queue = Queue()
         self.ptzCoordsQueue: Queue = Queue()
         self.settingQueue : Queue = Queue()
+        self.regionQueue : Queue = Queue()   
 
 
         

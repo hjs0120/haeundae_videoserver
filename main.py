@@ -231,9 +231,9 @@ class VideoServer():
                         self.matchedSharedData[detectCCTV] = sharedDetectData
                         sharedDetectDataList.append(sharedDetectData)
                         targetBroadcast = None
-                        for broadcast, targetDetectCCTV in broadcasts.items():
-                            if index in targetDetectCCTV:
-                                targetBroadcast = broadcast
+                        #for broadcast, targetDetectCCTV in broadcasts.items():
+                        #    if index in targetDetectCCTV:
+                        #        targetBroadcast = broadcast
                                 
                         isRunDetectFlag = False    
                         for group in self.group:

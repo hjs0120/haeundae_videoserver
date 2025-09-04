@@ -124,6 +124,15 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                 sharedDetectData.roe_coords = base_roe
             # 최초 세팅은 버전 증가 없이도 OK (원하면 +=1)
 
+
+    # ★ 최초 1회만 ROI/ROE 요약 로그 출력
+    logger.info(
+        "[CH%02d] ROI/ROE 초기 세팅 완료 → ROI=%s, ROE=%s",
+        int(detectCCTV.index),
+        sharedDetectData.roi_coords,
+        sharedDetectData.roe_coords
+    )            
+
     # === 초기 CONFIG 반영 (서버 기동 직후에도 즉시 일관 상태 확보) ===
     # - 우선순위: configSetting.* 가 있으면 그 값을 사용, 없으면 detectCCTV/디폴트
     init_sens = float(getattr(configSetting, "detectionSensitivity", 0.5))
@@ -149,7 +158,7 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
     
     # YOLO INIT
     try:
-        model = YOLO('yolov8s.pt').cuda()
+        model = YOLO(CONFIG["model_name"]).cuda()
         logger.info("능형 AI 모델 Load 성공")
     except Exception as e:
         logger.error("능형 AI 모델 Load 실패")
@@ -325,19 +334,60 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                         # ===== 정상 프레임이므로 카운트 리셋 =====
                         fail_count = 0
 
+                        '''
                         # === REGION UPDATE (버전 비교 → 변경시에만 재생성) ===
                         shared_ver = sharedDetectData.region_ver.value
                         if shared_ver != local_region_ver:
+                            logger.info(f"{cctvIndex}: prev region {roiPolygons} / {roePolygons}")
+                            with sharedDetectData.region_lock:
+                                _roi_coords = sharedDetectData.roi_coords or tuple()
+                                _roe_coords = sharedDetectData.roe_coords or tuple()
+                                local_region_ver = sharedDetectData.region_ver.value
+
+                            roiPolygons = [Polygon(poly) for poly in _roi_coords]
+                            roePolygons = [Polygon(poly) for poly in _roe_coords]
+                            logger.info(
+                                f"{cctvIndex}: ROI/ROE 업데이트 반영 "
+                                f"(roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})"
+                                f"{cctvIndex}: after region {roiPolygons} / {roePolygons}"
+                            )
+                        '''
+
+                        # === REGION UPDATE by QUEUE (non-blocking, 즉시 반영) ===
+                        _rq = updateRegions(sharedDetectData.regionQueue)
+                        if _rq is not None:
+                            try:
+                                tag, coords_list = _rq  # ['roi' or 'roe', [ [ [x,y],... ], ... ] ]
+                                if tag == 'roi':
+                                    roiPolygons = [Polygon(poly) for poly in coords_list]
+                                    # 하위 호환/초기 상태 공유를 위해 스냅샷 갱신(선택)
+                                    with sharedDetectData.region_lock:
+                                        sharedDetectData.roi_coords = tuple(tuple(tuple(p) for p in poly) for poly in coords_list)
+                                        local_region_ver = sharedDetectData.region_ver.value + 1
+                                        sharedDetectData.region_ver.value = local_region_ver
+                                    logger.info(f"{cctvIndex}: ROI 업데이트(QUEUE) 반영 → {len(coords_list)}개")
+                                elif tag == 'roe':
+                                    roePolygons = [Polygon(poly) for poly in coords_list]
+                                    with sharedDetectData.region_lock:
+                                        sharedDetectData.roe_coords = tuple(tuple(tuple(p) for p in poly) for poly in coords_list)
+                                        local_region_ver = sharedDetectData.region_ver.value + 1
+                                        sharedDetectData.region_ver.value = local_region_ver
+                                    logger.info(f"{cctvIndex}: ROE 업데이트(QUEUE) 반영 → {len(coords_list)}개")
+                            except Exception as _qe:
+                                logger.warning(f"{cctvIndex}: regionQueue parse/apply 실패: {_qe}")
+
+                        # (백업 경로) === REGION UPDATE by VERSION (기존 공용버전 비교) ===
+                        shared_ver = sharedDetectData.region_ver.value
+                        if shared_ver != local_region_ver:
+                            logger.info(f"{cctvIndex}: prev region {roiPolygons} / {roePolygons}")
                             with sharedDetectData.region_lock:
                                 _roi_coords = sharedDetectData.roi_coords or tuple()
                                 _roe_coords = sharedDetectData.roe_coords or tuple()
                                 local_region_ver = sharedDetectData.region_ver.value
                             roiPolygons = [Polygon(poly) for poly in _roi_coords]
                             roePolygons = [Polygon(poly) for poly in _roe_coords]
-                            logger.info(
-                                f"{cctvIndex}: ROI/ROE 업데이트 반영 "
-                                f"(roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})"
-                            )
+                            logger.info(f"{cctvIndex}: ROI/ROE 업데이트(VER) 반영 (roi={len(_roi_coords)}개, roe={len(_roe_coords)}개, ver={local_region_ver})")
+
 
                         # === SETTINGS UPDATE (non-blocking, 서버에서 파싱된 객체 수신) ===
                         _cfg = getJsonQueue(sharedDetectData.settingQueue)
@@ -345,9 +395,9 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             try:
                                 # 서버가 SimpleNamespace로 넣어줌. 혹시 dict/str 오더라도 호환.
                                 if isinstance(_cfg, dict):
-                                    _cfg = types.SimpleNamespace(**_cfg)
+                                    _cfg = SimpleNamespace(**_cfg)
                                 elif isinstance(_cfg, str):
-                                    _cfg = types.SimpleNamespace(**json.loads(_cfg))
+                                    _cfg = SimpleNamespace(**json.loads(_cfg))
 
                                 if hasattr(_cfg, "detectionSensitivity"):
                                     ns = float(_cfg.detectionSensitivity)
@@ -505,50 +555,6 @@ def detectedVideo(detectCCTV: DetectCCTV, sharedDetectData: SharedDetectData, is
                             # N ≥ N₀ + (20초 − 5초) = N₀ + 15초 프레임
                             if saveVideoFrameCnt >= req_cnt + (saveBufferSize - fps*5):
                                 if not saving_lock.is_set():
-                                    '''
-                                    saving_lock.set()
-                                    # numpy 스냅샷을 넘겨 저장(완료되면 lock 해제)
-                                    snapshot = list(frameBuffer)   # list[bytes]
-                                    def _job(frames_bytes, fps_val, path):
-                                        try:
-                                            saveVideo.save_jpeg_bytes(frames_bytes, fps_val, path)
-                                        finally:
-                                            saving_lock.clear()
-                                            nonlocal cooldown_until
-                                            cooldown_until = saveVideoFrameCnt + cooldown_frames
-                                    t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
-                                    t.start()
-                                    '''
-
-                                    '''
-                                    saving_lock.set()
-                                    # JPEG 바이트 → numpy(BGR)로 복원 후 ffmpeg 저장 경로 사용
-                                    snapshot = list(frameBuffer)   # list[bytes]
-                                    def _job(frames_bytes, fps_val, path):
-                                        try:
-                                            frames_np = []
-                                            for b in frames_bytes:
-                                                img = cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR)
-                                                if img is None:
-                                                    continue
-                                                h, w = img.shape[:2]
-                                                # H.264(yuv420p) 호환: 짝수 해상도로 보정
-                                                tw, th = w - (w % 2), h - (h % 2)
-                                                if (tw != w) or (th != h):
-                                                    img = cv2.resize(img, (tw, th), interpolation=cv2.INTER_LINEAR)
-                                                frames_np.append(img)
-                                            if frames_np:
-                                                # ffmpeg 경로로 저장 (SaveVideo.SAVE_METHOD="ffmpeg")
-                                                saveVideo.save_numpy(frames_np, fps_val, path)
-                                            else:
-                                                logger.warning(f"skip save: decoded 0 frames → {path}")
-                                        finally:
-                                            saving_lock.clear()
-                                            nonlocal cooldown_until
-                                            cooldown_until = saveVideoFrameCnt + cooldown_frames
-                                    t = threading.Thread(target=_job, args=(snapshot, fps, out_path), daemon=True)
-                                    t.start()
-                                    '''
                                     #logger.info(f"{cctvIndex}: spawning save thread for {out_path} ({len(frameBuffer)} frames)")
                                     saving_lock.set()
                                     snapshot = list(frameBuffer)   # list[bytes]
@@ -759,7 +765,7 @@ def getJsonQueue(jsonQueue: Queue):
     last = None
     while True:
         try:
-            v = q.get_nowait()
+            v = jsonQueue.get_nowait()
         except Empty:
             break
         except Exception:

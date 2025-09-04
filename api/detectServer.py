@@ -208,11 +208,16 @@ class DetectVideoServer():
                             pts.append((int(p["x"]), int(p["y"])))
                     if len(pts) >= 3:
                         polys.append(tuple(pts))
-                # 3) 공유변수 교체 + 버전 증가
-                with s.region_lock:
-                    s.roi_coords = tuple(polys)       # 불변 구조 통째 교체
-                    s.region_ver.value += 1           # 변경 통지
-                logger.info(f"{port}/{index}: updateRoi 적용 (n={len(polys)})")
+                # 3) 큐 프로토콜로 워커에 전달
+                #    헤더 ['roi'] → [x,y]... → ['endSign'] (폴리곤 경계) ... → None (종료)
+                q = s.regionQueue
+                q.put(['roi'])
+                for poly in polys:
+                    for (x, y) in poly:
+                        q.put([x, y])
+                    q.put(['endSign'])
+                q.put(None)
+                logger.info(f"{port}/{index}: updateRoi enqueued (n={len(polys)})")
                 return {"ok": True, "count": len(polys)}
             except Exception as e:
                 logger.error(f"{port}/{index}: updateRoi 오류: {e}")
@@ -241,11 +246,15 @@ class DetectVideoServer():
                             pts.append((int(p["x"]), int(p["y"])))
                     if len(pts) >= 3:
                         polys.append(tuple(pts))
-                # 3) 공유변수 교체 + 버전 증가
-                with s.region_lock:
-                    s.roe_coords = tuple(polys)
-                    s.region_ver.value += 1
-                logger.info(f"{port}/{index}: updateRoe 적용 (n={len(polys)})")
+                # 3) 큐 프로토콜로 워커에 전달
+                q = s.regionQueue
+                q.put(['roe'])
+                for poly in polys:
+                    for (x, y) in poly:
+                        q.put([x, y])
+                    q.put(['endSign'])
+                q.put(None)
+                logger.info(f"{port}/{index}: updateRoe enqueued (n={len(polys)})")
                 return {"ok": True, "count": len(polys)}
             except Exception as e:
                 logger.error(f"{port}/{index}: updateRoe 오류: {e}")
